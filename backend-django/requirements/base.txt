@@ -1,0 +1,26 @@
+# Core
+Django>=5.0,<5.3
+djangorestframework>=3.15
+django-cors-headers>=4.4
+django-filter>=24.2
+
+# Database
+psycopg2-binary>=2.9
+dj-database-url>=2.2
+
+# Config
+python-decouple>=3.8
+
+# Auth (Node-backend compatible JWT + argon2)
+PyJWT>=2.8
+argon2-cffi>=23.1
+
+# OCR / documents
+pypdf>=4.2
+pytesseract>=0.3.10
+Pillow>=10.3
+
+# Async / scheduled tasks
+celery>=5.4
+redis>=5.0
+django-celery-beat>=2.6
