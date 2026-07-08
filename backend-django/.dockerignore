@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.example
+db.sqlite3
+staticfiles/
+tesseract_bin/
+apps/ocr/test_fixtures/
+.git/
+.gitignore
+README.md

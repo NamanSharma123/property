@@ -16,8 +16,15 @@ RUN pip install --no-cache-dir -r requirements/prod.txt
 
 COPY . .
 
-RUN python manage.py collectstatic --noinput
+# collectstatic only needs SECRET_KEY to be present, not the real value — the
+# actual runtime secret is injected by App Runner as an env var and overrides
+# this at container start.
+RUN DJANGO_SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
 
 EXPOSE 5000
 
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:5000", "--workers", "4"]
+# --timeout 60: Neon's free tier suspends the DB compute when idle, and the
+# first request after a while can take ~30s to wake it back up — the default
+# gunicorn timeout (30s) killed that request right as it was about to
+# succeed. 60s gives headroom without masking a genuinely hung request.
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "60"]

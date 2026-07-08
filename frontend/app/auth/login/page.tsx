@@ -72,6 +72,7 @@ export default function LoginPage() {
                             <button
                                 type="button"
                                 onClick={fillDemoCredentials}
+                                suppressHydrationWarning
                                 className="ml-3 text-xs font-medium text-blue-600 hover:text-blue-500 whitespace-nowrap"
                             >
                                 Auto-fill
@@ -102,6 +103,7 @@ export default function LoginPage() {
                                         required
                                         value={email}
                                         onChange={(event) => setEmail(event.target.value)}
+                                        suppressHydrationWarning
                                         className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         placeholder="you@example.com"
                                         autoComplete="email"
@@ -124,6 +126,7 @@ export default function LoginPage() {
                                         required
                                         value={password}
                                         onChange={(event) => setPassword(event.target.value)}
+                                        suppressHydrationWarning
                                         className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         placeholder="••••••••"
                                         autoComplete="current-password"
@@ -131,6 +134,7 @@ export default function LoginPage() {
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}
+                                        suppressHydrationWarning
                                         className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
                                     >
                                         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -163,6 +167,7 @@ export default function LoginPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
+                                suppressHydrationWarning
                                 className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
                                 {loading ? 'Signing in...' : 'Sign in'}

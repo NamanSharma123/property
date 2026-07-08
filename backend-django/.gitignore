@@ -4,3 +4,9 @@ __pycache__/
 .env
 db.sqlite3
 staticfiles/
+
+# Portable Tesseract binary for local Windows dev (no system install needed).
+# Not tracked in git — too large as a binary blob. Docker/prod installs
+# tesseract-ocr via apt instead (see Dockerfile). See README OCR notes for
+# where to get a copy if you need local Windows OCR without a system install.
+tesseract_bin/

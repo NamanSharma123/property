@@ -2,8 +2,13 @@
 OCR endpoints — port of backend/src/controllers/ocrController.js (document
 lifecycle) and backend/src/controllers/pdfController.js (text extraction).
 
-- PDFs: text extraction with pypdf (equivalent of pdf-parse).
-- Images: OCR with pytesseract (requires the Tesseract binary; see README).
+- PDFs: text extraction with pypdf (equivalent of pdf-parse), with a
+  pdfplumber layout-aware parser tried first for known statement formats
+  (see statement_parser.py) and a PyMuPDF render + OCR fallback for scanned
+  PDFs with no extractable text.
+- Images: OCR with pytesseract, with an OpenCV preprocessing pass (denoise +
+  adaptive threshold + deskew) for better accuracy on scans/photos. Requires
+  the Tesseract binary; see README.
 """
 import hashlib
 import io
@@ -20,6 +25,7 @@ from apps.common.views import ProtectedView
 from apps.properties.models import Property
 from apps.transactions.models import Transaction
 
+from . import statement_parser
 from .models import Document, DocumentDuplicate, DocumentLineItem, ExtractedData
 from .parser import extract_data
 
@@ -319,12 +325,75 @@ def _extract_pdf_text(data):
     return text, len(reader.pages)
 
 
+def _extract_pdf_text_via_ocr(data, dpi=300):
+    """Render each page of a scanned PDF to an image and OCR it (PyMuPDF + pytesseract)."""
+    import fitz  # PyMuPDF
+    from PIL import Image
+
+    full_text = []
+    doc = fitz.open(stream=data, filetype='pdf')
+    zoom = dpi / 72
+    matrix = fitz.Matrix(zoom, zoom)
+
+    for page in doc:
+        pix = page.get_pixmap(matrix=matrix)
+        img_bytes = pix.tobytes('png')
+        text, _confidence = _extract_image_text(img_bytes)
+        full_text.append(text)
+
+    page_count = doc.page_count
+    doc.close()
+    return '\n'.join(full_text), page_count
+
+
+def _preprocess_for_ocr(pil_image):
+    """OpenCV cleanup pipeline: grayscale -> denoise -> adaptive threshold -> deskew."""
+    import cv2
+    import numpy as np
+
+    arr = np.array(pil_image.convert('RGB'))
+    cv_image = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+
+    gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+    denoised = cv2.fastNlMeansDenoising(gray, h=10)
+    thresh = cv2.adaptiveThreshold(
+        denoised, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31, 11,
+    )
+
+    coords = np.column_stack(np.where(thresh < 255))
+    if coords.size == 0:
+        corrected = thresh
+    else:
+        angle = cv2.minAreaRect(coords)[-1]
+        angle = -(90 + angle) if angle < -45 else -angle
+        if abs(angle) < 0.5:
+            corrected = thresh
+        else:
+            (h, w) = thresh.shape[:2]
+            center = (w // 2, h // 2)
+            m = cv2.getRotationMatrix2D(center, angle, 1.0)
+            corrected = cv2.warpAffine(
+                thresh, m, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE,
+            )
+
+    return Image.fromarray(corrected)
+
+
 def _extract_image_text(data):
     import pytesseract
     from PIL import Image
 
     image = Image.open(io.BytesIO(data))
-    ocr = pytesseract.image_to_data(image, lang='eng', output_type=pytesseract.Output.DICT)
+    try:
+        ocr_input = _preprocess_for_ocr(image)
+    except Exception:
+        ocr_input = image  # fall back to raw image if OpenCV preprocessing fails
+
+    config = '--oem 3 --psm 6'  # assume a uniform block of text
+    ocr = pytesseract.image_to_data(ocr_input, lang='eng', output_type=pytesseract.Output.DICT, config=config)
 
     confidences = []
     for word, conf in zip(ocr['text'], ocr['conf']):
@@ -336,7 +405,7 @@ def _extract_image_text(data):
             if conf >= 0:
                 confidences.append(conf)
 
-    text = pytesseract.image_to_string(image, lang='eng')
+    text = pytesseract.image_to_string(ocr_input, lang='eng', config=config)
     confidence = sum(confidences) / len(confidences) if confidences else 0
     return text, confidence
 
@@ -362,6 +431,7 @@ class ExtractTextView(ProtectedView):
         data = uploaded.read()
         confidence = 90
         page_count = 1
+        layout_result = None
 
         try:
             if uploaded.content_type == 'application/pdf':
@@ -369,14 +439,32 @@ class ExtractTextView(ProtectedView):
                 text, page_count = _extract_pdf_text(data)
 
                 if not text or len(text.strip()) < 10:
-                    return Response({
-                        'success': True,
-                        'isScanned': True,
-                        'text': '',
-                        'pageCount': page_count,
-                        'method': method,
-                        'message': 'This PDF appears to be scanned. Please convert it to images (PNG/JPG) for OCR processing.',
-                    })
+                    # Likely a scanned PDF with no extractable text — render pages
+                    # to images and OCR them before giving up.
+                    ocr_text, page_count = _extract_pdf_text_via_ocr(data)
+                    if ocr_text and len(ocr_text.strip()) >= 10:
+                        text = ocr_text
+                        method = 'pdf-ocr'
+                    else:
+                        return Response({
+                            'success': True,
+                            'isScanned': True,
+                            'text': '',
+                            'pageCount': page_count,
+                            'method': method,
+                            'message': 'This PDF appears to be scanned and OCR could not extract readable text. Please try a clearer scan.',
+                        })
+                else:
+                    # Digital PDF with extractable text — try the layout-aware
+                    # multi-format statement parser first, it's far more accurate
+                    # for known real-estate statement layouts (see statement_parser.py).
+                    try:
+                        transactions, period, prop_addr = statement_parser.extract_transactions_pdf(io.BytesIO(data))
+                        if transactions:
+                            layout_result = statement_parser.to_properties_shape(transactions, period, prop_addr)
+                            method = 'pdfplumber-layout'
+                    except Exception:
+                        layout_result = None
             else:
                 method = 'tesseract'
                 text, confidence = _extract_image_text(data)
@@ -391,7 +479,7 @@ class ExtractTextView(ProtectedView):
             return error_response(f'Text extraction failed: {exc}', 500)
 
         cleaned_text = _clean_text(text)
-        result = extract_data(cleaned_text)
+        result = layout_result or extract_data(cleaned_text)
 
         total_money_in = 0.0
         total_money_out = 0.0
@@ -443,21 +531,36 @@ class ExtractPDFTextView(ProtectedView):
         if invalid:
             return invalid
 
+        data = uploaded.read()
         try:
-            text, page_count = _extract_pdf_text(uploaded.read())
+            text, page_count = _extract_pdf_text(data)
         except Exception as exc:
             return error_response(f'Failed to process PDF: {exc}', 500)
 
         if not text or len(text.strip()) < 20:
-            return Response({
-                'success': True,
-                'isScanned': True,
-                'text': '',
-                'pageCount': page_count,
-                'message': 'PDF appears to be scanned (no extractable text). Please convert to images for OCR.',
-            })
+            try:
+                ocr_text, page_count = _extract_pdf_text_via_ocr(data)
+            except Exception:
+                ocr_text = ''
+            if not ocr_text or len(ocr_text.strip()) < 20:
+                return Response({
+                    'success': True,
+                    'isScanned': True,
+                    'text': '',
+                    'pageCount': page_count,
+                    'message': 'PDF appears to be scanned and OCR could not extract readable text. Please try a clearer scan.',
+                })
+            text = ocr_text
 
-        result = extract_data(text.strip())
+        layout_result = None
+        try:
+            transactions, period, prop_addr = statement_parser.extract_transactions_pdf(io.BytesIO(data))
+            if transactions:
+                layout_result = statement_parser.to_properties_shape(transactions, period, prop_addr)
+        except Exception:
+            layout_result = None
+
+        result = layout_result or extract_data(text.strip())
 
         return Response({
             'success': True,

@@ -13,8 +13,10 @@ export function SWRProvider({ children }: SWRProviderProps) {
             value={{
                 // Cache data for 5 minutes
                 dedupingInterval: 5 * 60 * 1000,
-                // Revalidate on focus
-                revalidateOnFocus: true,
+                // Don't refetch every hook on the page just from switching browser tabs —
+                // this was the main cause of "tabs feel slow" (a refetch storm on focus).
+                // Data still refreshes on the 5-min dedupingInterval and on reconnect.
+                revalidateOnFocus: false,
                 // Revalidate on reconnect
                 revalidateOnReconnect: true,
                 // Retry on error with exponential backoff

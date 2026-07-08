@@ -1,10 +1,16 @@
 # Properly Backend — Django REST Framework
 
-Django REST Framework port of the Node/Express backend in `../backend`. It is a
-drop-in replacement: same PostgreSQL schema, same endpoints, same JSON
-request/response shapes, and compatible auth — existing Argon2 password hashes
-and refresh tokens in the database keep working, and access tokens use the same
-JWT format (`{userId}` signed with `JWT_SECRET`).
+**This is the active backend** — the frontend (`../frontend`) talks to this,
+not `../backend`. Django REST Framework port of the original Node/Express
+backend in `../backend`, kept only for reference. It is a drop-in replacement:
+same PostgreSQL schema, same endpoints, same JSON request/response shapes, and
+compatible auth — existing Argon2 password hashes and refresh tokens in the
+database keep working, and access tokens use the same JWT format (`{userId}`
+signed with `JWT_SECRET`).
+
+Currently deployed against a Neon Postgres database (`ap-southeast-1` /
+Singapore) rather than the original Supabase instance — same setup either way,
+Neon is just another Postgres connection string in `DATABASE_URL`.
 
 ## Folder structure
 
