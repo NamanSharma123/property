@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,9 +24,12 @@ interface DetailRow {
 
 interface OCRPageProps {
   onBackClick?: () => void;
+  /** Pre-select this property (and enforce statement-address matching against it)
+   *  when arriving from that property's "Add Income / Expense" button. */
+  initialPropertyId?: string;
 }
 
-export default function OCRPage({ onBackClick }: OCRPageProps) {
+export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps) {
   const router = useRouter();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -38,6 +41,14 @@ export default function OCRPage({ onBackClick }: OCRPageProps) {
   const { properties, isLoading: isLoadingProperties } = usePropertiesSWR();
   const [selectedProperty, setSelectedProperty] = useState<string>('');
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
+
+  // Came in from a specific property's page — pre-select it once properties load.
+  useEffect(() => {
+    if (initialPropertyId && !selectedProperty && properties.some(p => p.id === initialPropertyId)) {
+      setSelectedProperty(initialPropertyId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPropertyId, properties]);
 
   // State for dates using Date objects (or undefined)
   const [statementDate, setStatementDate] = useState<Date | undefined>(new Date());
@@ -79,8 +90,12 @@ export default function OCRPage({ onBackClick }: OCRPageProps) {
       // Store extracted data for filtering later
       setExtractedData(extractedData);
 
+      const cameFromProperty = Boolean(initialPropertyId) && selectedProperty === initialPropertyId;
+
       // Check for properties in the document that aren't in the system
-      if (extractedData.properties.length > 0 && !isLoadingProperties) {
+      // (skip this generic check when we're strictly matching against the
+      // pre-selected property below — that path has its own, more specific message)
+      if (!cameFromProperty && extractedData.properties.length > 0 && !isLoadingProperties) {
         const missingFromSystem = extractedData.properties.filter(extractedProp => {
           // 1. Only report if there are actual transactions for this property
           if (!extractedProp.lineItems || extractedProp.lineItems.length === 0) return false;
@@ -204,6 +219,22 @@ export default function OCRPage({ onBackClick }: OCRPageProps) {
         30,
         selectedPropertyName || undefined
       );
+
+      // Statement actually names a property (not just the generic fallback bucket)
+      const namedSections = extractedData.properties.filter(
+        p => p.propertyName && p.propertyName !== 'Extracted Transactions' && p.lineItems?.length
+      );
+
+      if (cameFromProperty && namedSections.length > 0 && transactions.length === 0) {
+        // The statement has an address, but it doesn't match the property the user
+        // came from — per spec, add nothing and tell them to check the address.
+        setError(`The address on this statement doesn't match "${selectedPropertyName}". Please check the address and try again.`);
+        toast.error('Address does not match', {
+          description: `This statement is for "${namedSections[0].propertyName}", not "${selectedPropertyName}". Nothing was added.`,
+          duration: 10000,
+        });
+        return;
+      }
 
       if (transactions.length > 0) {
         const newDetails = transactions.map(t => ({

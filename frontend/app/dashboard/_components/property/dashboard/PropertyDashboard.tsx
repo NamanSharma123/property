@@ -527,7 +527,7 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                                 <p className="text-sm text-gray-500">List of all the transactions</p>
                             </div>
                             <button
-                                onClick={() => router.push('/dashboard/ocr')}
+                                onClick={() => router.push(`/dashboard/ocr?propertyId=${propertyId}`)}
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
                                 <Plus size={16} />

@@ -227,9 +227,16 @@ export function extractLineItemsForTransactions(
                 }
             }
 
-            // 4. NEW: Loose street name match (just check if street names overlap)
-            const looseStreetMatch = sectionComponents.street && filterComponents.street &&
-                sectionComponents.street === filterComponents.street;
+            // 4. Loose street name match — same street name, used as a fallback ONLY
+            // when at least one side has no unit/house number to compare (e.g. OCR
+            // missed it). If BOTH sides have a number, this must NOT override a
+            // mismatch — otherwise "1/6 Runge St" would match "2/6 Runge St" through
+            // "9/6 Runge St" on a multi-unit statement just because the street name
+            // is the same, silently attributing every unit's transactions to
+            // whichever one unit the user has selected.
+            const looseStreetMatch = Boolean(sectionComponents.street) && Boolean(filterComponents.street) &&
+                sectionComponents.street === filterComponents.street &&
+                (!sectionComponents.number || !filterComponents.number);
 
             console.log('  Match results:', { exactMatch, partialMatch, componentsMatch, looseStreetMatch });
 
