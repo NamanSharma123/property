@@ -133,3 +133,8 @@ CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 CELERY_TASK_ALWAYS_EAGER = False
+
+# Document storage (uploaded statements/receipts attached to transactions) —
+# S3, since App Runner has no persistent disk across deploys/restarts.
+DOCUMENTS_S3_BUCKET = config('DOCUMENTS_S3_BUCKET', default='')
+DOCUMENTS_S3_REGION = config('DOCUMENTS_S3_REGION', default='ap-southeast-2')

@@ -567,6 +567,30 @@ export const notificationsApi = {
     },
 };
 
+// Documents API — raw multipart upload, bypasses apiFetch since that forces
+// a JSON Content-Type header (which breaks multipart/form-data uploads).
+export const documentsApi = {
+    async upload(file: File): Promise<ApiResponse<{ url: string; fileName: string; fileSize: number; fileType: string }>> {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/ocr/upload-file`, {
+                method: 'POST',
+                headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+                body: formData,
+            });
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to upload document',
+            };
+        }
+    },
+};
+
 const api = {
     auth: authApi,
     properties: propertiesApi,
@@ -575,6 +599,7 @@ const api = {
     expenses: expensesApi,
     categories: categoriesApi,
     notifications: notificationsApi,
+    documents: documentsApi,
 };
 
 export default api;

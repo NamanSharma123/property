@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Upload, Download, Printer, MoreVertical, Trash2, Plus, ChevronUp, ChevronDown, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import { addMultipleTransactions } from '@/lib/transaction';
 import { processDocument, extractLineItemsForTransactions } from '@/lib/ocrService';
+import { documentsApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { usePropertiesSWR } from '@/hooks/usePropertiesSWR';
 import { useRouter } from 'next/navigation';
@@ -402,6 +403,20 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
     const endDateStr = format(endDate!, 'yyyy-MM-dd');
 
     try {
+      // Store the uploaded file (statement, receipt, report, whatever) so it's
+      // attached to the transactions it produced — not just the extracted data.
+      let receiptUrl: string | undefined;
+      if (selectedFile) {
+        const uploadResult = await documentsApi.upload(selectedFile);
+        if (uploadResult.success && uploadResult.data?.url) {
+          receiptUrl = uploadResult.data.url;
+        } else {
+          toast.warning('Document not saved', {
+            description: 'The transaction(s) will still be saved, but the uploaded file itself could not be stored.',
+          });
+        }
+      }
+
       const transactionItems = validDetails.map(detail => ({
         propertyId: selectedProperty,
         propertyName: property.name,
@@ -413,6 +428,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         statementDate: statementDateStr,
         startDate: startDateStr,
         endDate: endDateStr,
+        ...(receiptUrl ? { receiptUrl } : {}),
       }));
 
       const result = await addMultipleTransactions(transactionItems);

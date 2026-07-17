@@ -122,6 +122,7 @@ export async function addTransaction(data: {
   date: string;
   transactionSource?: string;
   description?: string;
+  receiptUrl?: string;
 }): Promise<{ success: boolean; error?: string }> {
   const categoryInfo = categoryLabelsMap[data.category] || { label: data.category, type: 'expense' };
 
@@ -134,6 +135,7 @@ export async function addTransaction(data: {
     categoryName: data.category,
     transactionSource: data.transactionSource || 'Manual Entry',
     status: 'paid',
+    ...(data.receiptUrl ? { receiptUrl: data.receiptUrl } : {}),
   });
 
   if (response.success) {
@@ -151,6 +153,7 @@ export async function addMultipleTransactions(items: Array<{
   amount: number;
   date: string;
   transactionSource?: string;
+  receiptUrl?: string;
 }>): Promise<{ success: boolean; error?: string; count?: number }> {
   let count = 0;
 

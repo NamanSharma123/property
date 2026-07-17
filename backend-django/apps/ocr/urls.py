@@ -6,6 +6,7 @@ urlpatterns = [
     path('ocr/extract', views.ExtractTextView.as_view()),
     path('ocr/extract-pdf', views.ExtractPDFTextView.as_view()),
     path('ocr/upload', views.UploadDocumentView.as_view()),
+    path('ocr/upload-file', views.UploadFileView.as_view()),
     path('ocr/process', views.ProcessDocumentView.as_view()),
     path('ocr/documents', views.DocumentListView.as_view()),
     path('ocr/document/<uuid:document_id>', views.DocumentDetailView.as_view()),

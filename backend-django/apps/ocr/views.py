@@ -569,3 +569,54 @@ class ExtractPDFTextView(ProtectedView):
             'pageCount': page_count,
             'extractedData': result,
         })
+
+
+class UploadFileView(ProtectedView):
+    """
+    POST /api/ocr/upload-file — field name `file`. Stores the raw uploaded
+    file (statement, receipt, depreciation report, whatever) in S3 and
+    returns its URL, for attaching to a transaction as `receiptUrl`. Unlike
+    UploadDocumentView (which expects a fileUrl already computed elsewhere),
+    this is the endpoint that actually does the upload.
+    """
+
+    def post(self, request):
+        import uuid
+
+        import boto3
+        from django.conf import settings
+
+        uploaded = request.FILES.get('file')
+        if not uploaded:
+            return error_response('No file uploaded', 400)
+
+        invalid = _validate_upload(uploaded)
+        if invalid:
+            return invalid
+
+        if not settings.DOCUMENTS_S3_BUCKET:
+            return error_response('Document storage is not configured', 503)
+
+        ext = (uploaded.name.rsplit('.', 1)[-1] if '.' in uploaded.name else 'bin').lower()
+        key = f'documents/{request.user.id}/{uuid.uuid4()}.{ext}'
+
+        try:
+            s3 = boto3.client('s3', region_name=settings.DOCUMENTS_S3_REGION)
+            s3.upload_fileobj(
+                uploaded,
+                settings.DOCUMENTS_S3_BUCKET,
+                key,
+                ExtraArgs={'ContentType': uploaded.content_type},
+            )
+        except Exception as exc:
+            return error_response(f'Failed to store document: {exc}', 500)
+
+        url = f'https://{settings.DOCUMENTS_S3_BUCKET}.s3.{settings.DOCUMENTS_S3_REGION}.amazonaws.com/{key}'
+
+        return Response({
+            'success': True,
+            'url': url,
+            'fileName': uploaded.name,
+            'fileSize': uploaded.size,
+            'fileType': uploaded.content_type,
+        }, status=201)

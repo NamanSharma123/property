@@ -27,3 +27,6 @@ opencv-python>=4.8.0
 celery>=5.4
 redis>=5.0
 django-celery-beat>=2.6
+
+# Document storage (S3)
+boto3>=1.34
