@@ -25,6 +25,15 @@ from .parser import determine_category
 _AMOUNT_RE = re.compile(r'^\$?[\d,]+\.\d{2}$')
 _DATE_SLASH_RE = re.compile(r'\b(\d{1,2}/\d{2}/\d{4})\b')
 
+# Leading token of a property-header row: house/unit number, e.g. "85",
+# "9A", "2a" (letter-suffix units), "2/35" or "2-35" (unit/range with a
+# slash or hyphen). Previously only accepted pure-digit + optional /digit,
+# which silently missed any address with a letter-suffix unit or a
+# hyphenated range — causing the real property address to go undetected
+# and the parser to fall back to whatever address-looking text appeared
+# first in the document (often the agency's own letterhead).
+_PROPERTY_HEADER_NUM_RE = re.compile(r'^\d{1,4}[a-zA-Z]?(?:[/-]\d{1,4}[a-zA-Z]?)?$')
+
 _SKIP_WORDS = {
     'Total', 'GST', 'Income', 'Expenses', 'Opening', 'Closing', 'Balance',
     'Overview', 'In', 'Out', 'Transferred', 'Transfers', 'Transfer',
@@ -96,6 +105,372 @@ def _addr_matches(filter_str, prop_addr):
     if fl in pl or pl in fl:
         return fl.split()[0] == pl.split()[0]
     return False
+
+
+# Matches a property-address line anywhere in a line of text (not just at the
+# start), e.g. "2/35 Hurley St, Pimpama QLD 4209" or "Room 1 2/35 Hurley St...".
+# Used by _find_property_section_headers below to detect per-property section
+# headers in statement formats that print the address as its own line
+# (typically followed by "$X per week") rather than as a table column.
+_STREET_TYPES_RE = (r'(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Court|Ct|Place|Pl|Way|'
+                     r'Boulevard|Blvd|Lane|Ln|Crescent|Cres|Close|Cl|Circuit|Cct|'
+                     r'Grove|Gr|Terrace|Tce|Parade|Pde|Highway|Hwy|Square|Sq)')
+_ADDRESS_LINE_RE = re.compile(
+    r'(\d{1,4}[a-zA-Z]?(?:[/-]\d{1,4}[a-zA-Z]?)?'
+    r'\s+[A-Za-z][A-Za-z\' ]*?'
+    r'\s+' + _STREET_TYPES_RE + r'\b'
+    r'(?:[,\s]+[A-Za-z][A-Za-z ]*\s+[A-Z]{2,3}\s+\d{4})?)',
+    re.IGNORECASE,
+)
+
+
+def _find_property_section_headers(words, y_min, y_max):
+    """
+    Scan words between y_min/y_max for lines that look like a property
+    address (optionally prefixed, e.g. "Room 1 2/35 Hurley St, ..."). Used to
+    tag transactions with the right property in statement formats (Format A's
+    generic "Transactions" heading) that print the address as its own line
+    rather than as an explicit table column. Returns [(y, address), ...]
+    sorted by y.
+    """
+    lines = {}
+    for w in words:
+        if y_min < w['top'] < y_max:
+            lines.setdefault(round(w['top'], 1), []).append(w)
+
+    headers = []
+    for y in sorted(lines):
+        line_words = sorted(lines[y], key=lambda w: w['x0'])
+        line_text = ' '.join(w['text'] for w in line_words)
+        m = _ADDRESS_LINE_RE.search(line_text)
+        if m:
+            addr = re.sub(r'\s+', ' ', m.group(1)).strip().rstrip(',')
+            headers.append((y, addr))
+    return headers
+
+
+def _property_for_y_generic(headers, y):
+    prop = ''
+    for hy, addr in headers:
+        if hy <= y:
+            prop = addr
+        else:
+            break
+    return prop
+
+
+# ─── Format G: "RENT INCOME SUMMARY FOR PERIOD" + "MONEY OUT MONEY IN" fee table ──
+# Single-property ownership statements where rent income lives in its own
+# summary table (columns: Property, Tenancy, Rent Period Amount, Paid
+# From/To, Effective Date, Part Payment, PAID) rather than a Money In/Out
+# table — none of the other detectors recognise this table shape at all, so
+# statements using it lose their rent income entirely.
+
+def _has_rent_income_summary_format(words):
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['text'] == 'RENT':
+            same_line = sorted(
+                [w2 for w2 in words if abs(w2['top'] - w['top']) <= 2],
+                key=lambda x: x['x0']
+            )
+            texts = [w2['text'] for w2 in same_line]
+            if 'INCOME' in texts and 'SUMMARY' in texts:
+                return True
+    return False
+
+
+def _extract_rent_income_summary_format(words):
+    transactions = []
+
+    header_y = property_col_x0 = tenancy_col_x0 = paid_col_x = None
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['text'] == 'Property' and w['x0'] < 80:
+            same_line = sorted(
+                [w2 for w2 in words if abs(w2['top'] - w['top']) <= 2],
+                key=lambda x: x['x0']
+            )
+            texts = [w2['text'] for w2 in same_line]
+            if 'Tenancy' not in texts:
+                continue
+            header_y = w['top']
+            property_col_x0 = w['x0']
+            for w2 in same_line:
+                if w2['text'] == 'Tenancy' and tenancy_col_x0 is None:
+                    tenancy_col_x0 = w2['x0']
+                if w2['text'] == 'PAID' and paid_col_x is None:
+                    paid_col_x = (w2['x0'] + w2['x1']) / 2
+            break
+
+    if header_y is None or paid_col_x is None:
+        return transactions
+
+    # Data starts a couple of lines below the (possibly wrapped) header and
+    # runs until the "Total rent for period" row.
+    stop_y = float('inf')
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['top'] <= header_y:
+            continue
+        if w['text'] == 'Total' and w['x0'] < 80:
+            same_line = sorted(
+                [w2 for w2 in words if abs(w2['top'] - w['top']) <= 2],
+                key=lambda x: x['x0']
+            )
+            if any(w2['text'] == 'rent' for w2 in same_line):
+                stop_y = w['top']
+                break
+
+    COL_TOL = 30
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['top'] <= header_y + 5 or w['top'] >= stop_y:
+            continue
+        if not _AMOUNT_RE.match(w['text']):
+            continue
+        cx = (w['x0'] + w['x1']) / 2
+        if abs(cx - paid_col_x) >= COL_TOL:
+            continue
+
+        val = _parse_amount(w['text'])
+        if not val or float(val) == 0:
+            continue
+
+        amt_y = w['top']
+        prop_words = sorted(
+            [dw for dw in words
+             if abs(dw['top'] - amt_y) < 4
+             and property_col_x0 <= dw['x0'] < tenancy_col_x0],
+            key=lambda dw: dw['x0']
+        )
+        property_addr = ' '.join(dw['text'] for dw in prop_words).strip()
+        if not property_addr:
+            continue
+
+        transactions.append({
+            'date': '',
+            'description': 'Rent',
+            'amount_in': val,
+            'amount_out': '',
+            'property_address': property_addr,
+        })
+
+    return transactions
+
+
+def _extract_generic_money_table(words, property_addr, skip_first_words):
+    """
+    A "<description column> ... MONEY OUT MONEY IN" table without the strict
+    "OWNERSHIP"+"STATEMENT" header gating that Format D requires — used as a
+    companion pass for single-property statements (e.g. Format G) whose fee
+    table lives further down the page under a different heading. Stops at
+    "WITHHELD" or a following all-different major section (best-effort).
+    """
+    transactions = []
+
+    header_y = desc_col_x0 = money_out_x = money_in_x = None
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['text'] != 'MONEY':
+            continue
+        same_line = sorted(
+            [w2 for w2 in words if abs(w2['top'] - w['top']) <= 2],
+            key=lambda x: x['x0']
+        )
+        texts = [w2['text'] for w2 in same_line]
+        if 'OUT' not in texts or 'IN' not in texts:
+            continue
+        header_y = w['top']
+        desc_col_x0 = same_line[0]['x0']
+        i = 0
+        while i < len(same_line):
+            if same_line[i]['text'] == 'MONEY' and i + 1 < len(same_line):
+                nxt = same_line[i + 1]
+                if nxt['text'] == 'OUT' and money_out_x is None:
+                    money_out_x = (same_line[i]['x0'] + nxt['x1']) / 2
+                elif nxt['text'] == 'IN' and money_in_x is None:
+                    money_in_x = (same_line[i]['x0'] + nxt['x1']) / 2
+            i += 1
+        break
+
+    if header_y is None or money_out_x is None:
+        return transactions
+
+    stop_y = float('inf')
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['top'] <= header_y:
+            continue
+        if w['text'] in ('WITHHELD', 'OWNERSHIP'):
+            stop_y = w['top']
+            break
+
+    COL_TOL = 35
+    desc_x_max = min(money_out_x, money_in_x) - COL_TOL
+
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['top'] <= header_y or w['top'] >= stop_y:
+            continue
+        if not _AMOUNT_RE.match(w['text']):
+            continue
+
+        cx = (w['x0'] + w['x1']) / 2
+        col = None
+        if abs(cx - money_out_x) < COL_TOL:
+            col = 'out'
+        elif abs(cx - money_in_x) < COL_TOL:
+            col = 'in'
+        if col is None:
+            continue
+
+        val = _parse_amount(w['text'])
+        if not val or float(val) == 0:
+            continue
+
+        amt_y = w['top']
+        desc_words = sorted(
+            [dw for dw in words
+             if abs(dw['top'] - amt_y) < 3
+             and desc_col_x0 <= dw['x0'] < desc_x_max
+             and not _AMOUNT_RE.match(dw['text'])],
+            key=lambda dw: dw['x0']
+        )
+        raw_desc = ' '.join(dw['text'] for dw in desc_words).strip()
+        if not raw_desc:
+            continue
+        first_word = raw_desc.split()[0]
+        if first_word in skip_first_words:
+            continue
+        if raw_desc.strip().lower().startswith(('subtotal', 'sub total', 'sub-total', 'total')):
+            continue
+
+        clean = _clean_desc(raw_desc)
+        if not clean or len(clean) < 3:
+            continue
+
+        transactions.append({
+            'date': '',
+            'description': clean[:120],
+            'amount_in': val if col == 'in' else '',
+            'amount_out': val if col == 'out' else '',
+            'property_address': property_addr,
+        })
+
+    return transactions
+
+
+# ─── Format H: generic "Description ... <out-col> ... <in-col>" ledger with
+# property addresses as their own header lines (no "Transactions"/"Transfers"
+# trigger words to anchor on, unlike Format A) ──
+# Different vendors label the same two columns differently — Disbursed/
+# Credited, Debit/Credit, Paid/Received, etc. Rather than hand-coding a new
+# format per label pair, detect any known pair and reuse the same
+# address-section-header tagging as Format A.
+_MONEY_COLUMN_SYNONYMS = [
+    ('Disbursed', 'Credited'),
+    ('Debit', 'Credit'),
+    ('Paid', 'Received'),
+    ('Expense', 'Income'),
+]
+
+
+def _find_money_column_header(words):
+    """
+    Look for a header row containing one of the known out/in column-label
+    pairs. Returns (header_y, out_x, in_x) or (None, None, None).
+
+    Rejects lines where a label is immediately followed by an actual dollar
+    amount (e.g. a summary sentence like "Credited $5,364.40 Disbursed
+    $1,872.63") — a real column header has the labels on their own,
+    optionally with a "($)" suffix, not a value.
+    """
+    for w in sorted(words, key=lambda x: x['top']):
+        for out_word, in_word in _MONEY_COLUMN_SYNONYMS:
+            if w['text'].rstrip('($)') != out_word:
+                continue
+            same_line = sorted(
+                [w2 for w2 in words if abs(w2['top'] - w['top']) <= 2],
+                key=lambda x: x['x0']
+            )
+            in_match = next((w2 for w2 in same_line if w2['text'].rstrip('($)') == in_word), None)
+            if not in_match:
+                continue
+
+            def _next_word_is_amount(label_word):
+                after = [w2 for w2 in same_line if w2['x0'] > label_word['x1']]
+                if not after:
+                    return False
+                nxt = min(after, key=lambda w2: w2['x0'])
+                return bool(re.match(r'^\$[\d,]+\.\d{2}$', nxt['text']))
+
+            if _next_word_is_amount(w) or _next_word_is_amount(in_match):
+                continue
+
+            return w['top'], (w['x0'] + w['x1']) / 2, (in_match['x0'] + in_match['x1']) / 2
+    return None, None, None
+
+
+def _has_generic_ledger_format(words):
+    header_y, _, _ = _find_money_column_header(words)
+    return header_y is not None
+
+
+def _extract_generic_ledger_format(words):
+    transactions = []
+
+    header_y, out_x, in_x = _find_money_column_header(words)
+    if header_y is None:
+        return transactions
+
+    # Property address headers can appear before the column-header row (a
+    # single-property statement's address printed above the ledger table) or
+    # after it (repeated per-property blocks in a multi-property statement) —
+    # scan the whole page either way.
+    section_headers = _find_property_section_headers(words, 0, float('inf'))
+
+    COL_TOL = 35
+    DESC_RANGE = 3
+    left_boundary = min(in_x, out_x) - COL_TOL
+
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['top'] <= header_y:
+            continue
+        if not _AMOUNT_RE.match(w['text']):
+            continue
+
+        cx = (w['x0'] + w['x1']) / 2
+        col = None
+        if abs(cx - out_x) < COL_TOL:
+            col = 'out'
+        elif abs(cx - in_x) < COL_TOL:
+            col = 'in'
+        if col is None:
+            continue
+
+        val = _parse_amount(w['text'])
+        if not val or float(val) == 0:
+            continue
+
+        amt_y = w['top']
+        desc_words = sorted(
+            [dw for dw in words
+             if dw['x1'] < left_boundary
+             and abs(dw['top'] - amt_y) < DESC_RANGE
+             and not _AMOUNT_RE.match(dw['text'])],
+            key=lambda dw: dw['x0']
+        )
+        raw_desc = ' '.join(dw['text'] for dw in desc_words).strip()
+        if not raw_desc or raw_desc.strip().lower().startswith(('total', 'subtotal', 'sub total', 'sub-total')):
+            continue
+
+        clean = _clean_desc(raw_desc)
+        if not clean or len(clean) < 3:
+            continue
+
+        transactions.append({
+            'date': '',
+            'description': clean[:120],
+            'amount_in': val if col == 'in' else '',
+            'amount_out': val if col == 'out' else '',
+            'property_address': _property_for_y_generic(section_headers, amt_y),
+        })
+
+    return transactions
 
 
 # ─── Format D: MRI Real Estate "OWNERSHIP STATEMENT" (MONEY OUT / MONEY IN) ──
@@ -234,7 +609,7 @@ def _extract_ownership_statement_format(words):
         if not raw_desc or len(raw_desc) < 3:
             continue
 
-        if raw_desc.lower().startswith(('total', 'subtotal', 'sub total')):
+        if raw_desc.lower().startswith(('total', 'subtotal', 'sub total', 'sub-total')):
             continue
 
         transactions.append({
@@ -511,7 +886,7 @@ def _extract_details_for_format(words):
     for w in sorted(words, key=lambda x: x['top']):
         if w['top'] <= details_y or w['top'] >= stop_y:
             continue
-        if re.match(r'^\d{1,4}(/\d{1,3})?$', w['text']) and w['x0'] < 80:
+        if _PROPERTY_HEADER_NUM_RE.match(w['text']) and w['x0'] < 80:
             row_words = sorted(
                 [w2 for w2 in words
                  if abs(w2['top'] - w['top']) <= 2 and w2['x0'] < desc_cut],
@@ -633,7 +1008,7 @@ def detect_pdf_addresses(pdf_file):
                     for w in sorted(all_words, key=lambda x: x['top']):
                         if w['top'] <= details_y or w['top'] >= stop_y:
                             continue
-                        if re.match(r'^\d{1,4}(/\d{1,3})?$', w['text']) and w['x0'] < 80:
+                        if _PROPERTY_HEADER_NUM_RE.match(w['text']) and w['x0'] < 80:
                             row_words = sorted(
                                 [w2 for w2 in all_words
                                  if abs(w2['top'] - w['top']) <= 2
@@ -729,6 +1104,13 @@ def extract_transactions_pdf(pdf_file, address_filter=None):
         if _has_details_for_format(first_page_words):
             all_words = _combine_format_c_pages(pdf)
             transactions = _extract_details_for_format(all_words)
+        elif _has_rent_income_summary_format(first_page_words):
+            all_words = _combine_format_c_pages(pdf)
+            transactions = _extract_rent_income_summary_format(all_words)
+            fee_property = transactions[0]['property_address'] if transactions else property_addr
+            transactions.extend(
+                _extract_generic_money_table(all_words, fee_property, _SKIP_WORDS)
+            )
         else:
             found_tx_section = False
             transfers_seen = False
@@ -738,16 +1120,28 @@ def extract_transactions_pdf(pdf_file, address_filter=None):
                 if not words:
                     continue
 
-                if _has_owner_statement_format(words):
-                    transactions.extend(_extract_owner_statement_format(words))
-                    continue
-
-                if _has_ownership_statement_format(words):
-                    transactions.extend(_extract_ownership_statement_format(words))
-                    continue
-
-                if _has_account_folio_format(words):
-                    transactions.extend(_extract_account_folio_format(words))
+                # Try each specific-format extractor in turn; a detector can
+                # false-positive on a page that merely shares a heading/title
+                # with its target format but not the actual column layout
+                # (e.g. anything titled "Owner Statement"), so only stop here
+                # if the extractor actually found something — otherwise fall
+                # through to the next, more generic, detector instead of
+                # silently giving up on the page.
+                page_formats = (
+                    (_has_owner_statement_format, _extract_owner_statement_format),
+                    (_has_ownership_statement_format, _extract_ownership_statement_format),
+                    (_has_account_folio_format, _extract_account_folio_format),
+                    (_has_generic_ledger_format, _extract_generic_ledger_format),
+                )
+                matched_specific_format = False
+                for has_fmt, extract_fmt in page_formats:
+                    if has_fmt(words):
+                        found = extract_fmt(words)
+                        if found:
+                            transactions.extend(found)
+                            matched_specific_format = True
+                            break
+                if matched_specific_format:
                     continue
 
                 transactions_y = None
@@ -787,6 +1181,15 @@ def extract_transactions_pdf(pdf_file, address_filter=None):
 
                 if in_x is None or out_x is None:
                     continue
+
+                # Format A doesn't have an explicit property column — the
+                # address is printed as its own line above each property's
+                # block of transactions (e.g. "2/35 Hurley St, Pimpama QLD
+                # 4209" followed by "$570.00 per week"). Find those header
+                # lines so transactions can be tagged with the right one.
+                section_headers = _find_property_section_headers(
+                    words, start_y, transfers_y if transfers_y else float('inf')
+                )
 
                 COL_TOL = 35
                 DESC_RANGE = 5
@@ -829,7 +1232,7 @@ def extract_transactions_pdf(pdf_file, address_filter=None):
                     if re.match(r'^\d{1,2}$', clean):
                         continue
                     _cl = clean.lower()
-                    if _cl.startswith(('total', 'grand total', 'sub total', 'subtotal',
+                    if _cl.startswith(('total', 'grand total', 'sub total', 'sub-total', 'subtotal',
                                         'net total', 'net balance', 'opening', 'closing')):
                         continue
 
@@ -850,20 +1253,26 @@ def extract_transactions_pdf(pdf_file, address_filter=None):
                         "description": clean[:120],
                         "amount_in": val if col == 'in' else "",
                         "amount_out": val if col == 'out' else "",
+                        "property_address": _property_for_y_generic(section_headers, amt_y),
                     })
 
     if not transactions:
         return transactions, statement_period, property_addr
 
-    for t in transactions:
-        if 'property_address' not in t:
-            t['property_address'] = property_addr
-
+    # Prefer a real per-transaction address (e.g. from a section header) over
+    # the document-level meta-detected one (often the agency's own letterhead
+    # address, not the property's) BEFORE using it to backfill transactions
+    # that didn't get their own address — e.g. rows on a page-2 continuation
+    # of a property section whose header only appeared on page 1.
     first_tx_addr = next(
         (t.get('property_address', '') for t in transactions
          if t.get('property_address', '')), '')
     if first_tx_addr:
         property_addr = first_tx_addr
+
+    for t in transactions:
+        if not t.get('property_address'):
+            t['property_address'] = property_addr
 
     if address_filter is not None:
         if isinstance(address_filter, list):

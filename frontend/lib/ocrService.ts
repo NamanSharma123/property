@@ -168,31 +168,34 @@ export function extractLineItemsForTransactions(
 
             const extractKeyComponents = (name: string) => {
                 const normalized = name.toLowerCase().trim();
-                const components = {
-                    number: '',
-                    street: '',
-                };
-
-                // Extract unit/street number pattern (e.g., "2a/35" or "35" or "2/3")
-                // We look for the first word that starts with a number
                 const words = normalized.split(/[\s,]+/);
-                const numberMatch = words[0]?.match(/(\d+[a-z]?\/?\d*[a-z]?)/);
-                if (numberMatch) {
-                    components.number = numberMatch[1];
+
+                // Extract ALL leading unit/street numbers, e.g. "9a", "2a/35" —
+                // and for a duplex property entered as "9a 9b sicilian ave",
+                // BOTH "9a" and "9b" (a statement covering either unit should
+                // match this single combined property).
+                const numbers: string[] = [];
+                let i = 0;
+                while (i < words.length) {
+                    const m = words[i].match(/^(\d+[a-z]?(?:\/\d+[a-z]?)?)$/);
+                    if (!m) break;
+                    numbers.push(m[1]);
+                    i++;
                 }
 
-                // Extract street name
-                // Look for common street types and take the word before it
-                // Added 'pi' for Place abbreviation
-                const streetTypeIndex = words.findIndex(w => /^(st|street|rd|road|ave|avenue|dr|drive|ct|court|pl|place|pi|way|ln|lane|blvd|boulevard|cres|crescent|pde|parade|tce|terrace|hwy|highway)$/i.test(w));
+                // Extract street name — look for common street types and take
+                // the word before it. Added 'pi' for Place abbreviation.
+                const streetTypeIndex = words.findIndex((w, idx) => idx >= i &&
+                    /^(st|street|rd|road|ave|avenue|dr|drive|ct|court|pl|place|pi|way|ln|lane|blvd|boulevard|cres|crescent|pde|parade|tce|terrace|hwy|highway)$/i.test(w));
+                let street = '';
                 if (streetTypeIndex > 0) {
-                    components.street = words[streetTypeIndex - 1];
-                } else if (words.length > 1) {
-                    // Fallback: if no street type found, use the word after number or first word
-                    components.street = components.number ? words[1] : words[0];
+                    street = words[streetTypeIndex - 1];
+                } else if (words.length > i) {
+                    // Fallback: if no street type found, use the first word after the number(s)
+                    street = words[i] || words[0];
                 }
 
-                return components;
+                return { numbers, street };
             };
 
             const sectionComponents = extractKeyComponents(sectionNameNormalized);
@@ -209,17 +212,16 @@ export function extractLineItemsForTransactions(
                 filterNameNormalized.includes(sectionNameNormalized);
 
             // 3. Component-based match with strictness
-            // If both have numbers, they MUST match
+            // If both have numbers, at least one must match (duplex properties
+            // like "9a 9b Sicilian Ave" carry multiple numbers — any overlap counts)
             let componentsMatch = false;
             if (sectionComponents.street && filterComponents.street &&
                 (sectionComponents.street.includes(filterComponents.street) || filterComponents.street.includes(sectionComponents.street))) {
 
-                // Street matches, now check numbers
-                if (sectionComponents.number && filterComponents.number) {
-                    // Both have numbers - they must match exactly or one must be a substring of the other (e.g. "35" in "1/35")
-                    componentsMatch = sectionComponents.number === filterComponents.number ||
-                        sectionComponents.number.includes(filterComponents.number) ||
-                        filterComponents.number.includes(sectionComponents.number);
+                if (sectionComponents.numbers.length && filterComponents.numbers.length) {
+                    componentsMatch = sectionComponents.numbers.some(sn =>
+                        filterComponents.numbers.some(fn => sn === fn || sn.includes(fn) || fn.includes(sn))
+                    );
                 } else {
                     // At least one is missing a number - allow matches based on street name alone
                     // (This handles cases where the OCR might have missed the number but got the street)
@@ -229,14 +231,14 @@ export function extractLineItemsForTransactions(
 
             // 4. Loose street name match — same street name, used as a fallback ONLY
             // when at least one side has no unit/house number to compare (e.g. OCR
-            // missed it). If BOTH sides have a number, this must NOT override a
+            // missed it). If BOTH sides have numbers, this must NOT override a
             // mismatch — otherwise "1/6 Runge St" would match "2/6 Runge St" through
             // "9/6 Runge St" on a multi-unit statement just because the street name
             // is the same, silently attributing every unit's transactions to
             // whichever one unit the user has selected.
             const looseStreetMatch = Boolean(sectionComponents.street) && Boolean(filterComponents.street) &&
                 sectionComponents.street === filterComponents.street &&
-                (!sectionComponents.number || !filterComponents.number);
+                (!sectionComponents.numbers.length || !filterComponents.numbers.length);
 
             console.log('  Match results:', { exactMatch, partialMatch, componentsMatch, looseStreetMatch });
 
