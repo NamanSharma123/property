@@ -715,7 +715,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
   };
 
   // Maximum number of owners allowed
-  const MAX_OWNERS = 10;
+  const MAX_OWNERS = 5;
   const MAX_TRUST_OWNERS = 10;
   const MAX_BANKS = 5;
 
@@ -1491,7 +1491,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
               {ownershipType === 'joint-spouse' && (
                 <div className="bg-gray-50 rounded-xl p-6 mt-4 space-y-4">
                   {owners.map((owner, idx) => (
-                    <div key={owner.id} className="grid grid-cols-[1fr_200px] gap-4 items-end">
+                    <div key={owner.id} className="grid grid-cols-[1fr_200px_auto] gap-4 items-end">
                       <div>
                         <Label className="text-gray-700">Name<span className="text-red-500">*</span></Label>
                         <Input
@@ -1519,8 +1519,27 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
                           <p className="text-sm text-red-500 mt-1">{fieldErrors[`owner${idx + 1}Ownership`] || fieldErrors.ownershipTotal}</p>
                         )}
                       </div>
+                      {idx >= 2 && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeOwner(owner.id)}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   ))}
+                  {owners.length < MAX_OWNERS && (
+                    <Button
+                      variant="link"
+                      onClick={addOwner}
+                      className="text-blue-600 p-0 h-auto font-medium"
+                    >
+                      <Plus className="w-4 h-4 mr-1" /> Add Owner
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -1568,13 +1587,15 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
                       )}
                     </div>
                   ))}
-                  <Button
-                    variant="link"
-                    onClick={addOwner}
-                    className="text-blue-600 p-0 h-auto font-medium"
-                  >
-                    <Plus className="w-4 h-4 mr-1" /> Add Partner
-                  </Button>
+                  {owners.length < MAX_OWNERS && (
+                    <Button
+                      variant="link"
+                      onClick={addOwner}
+                      className="text-blue-600 p-0 h-auto font-medium"
+                    >
+                      <Plus className="w-4 h-4 mr-1" /> Add Partner
+                    </Button>
+                  )}
                 </div>
               )}
 
