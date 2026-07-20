@@ -15,6 +15,20 @@ import {
 import { MultiSelect } from '@/components/ui/multi-select';
 import { propertiesApi, transactionsApi } from '@/lib/api';
 
+interface LoanDocument {
+    name: string;
+    size: number;
+    url?: string;
+}
+
+interface LoanBankDetail {
+    id?: string;
+    bankName?: string;
+    loanAmount?: number;
+    loanAllocationPercent?: string;
+    document?: LoanDocument | null;
+}
+
 interface PropertyData {
     id: string;
     name: string;
@@ -36,7 +50,10 @@ interface PropertyData {
     purchase_price?: number;
     current_value?: number;
     monthly_rent?: number;
-    loanDetails?: string;
+    // The API serializes DB columns as-is (snake_case) — this is a real JSON
+    // array/object already, not a JSON string, despite the "Details" naming
+    // suggesting otherwise.
+    loan_details?: LoanBankDetail[] | LoanBankDetail | Record<string, never>;
     connectedBank?: string;
 }
 
@@ -153,18 +170,20 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
     let netEquity = marketValue;
     let connectedBankNames: string[] = [];
     try {
-        if (property?.loanDetails) {
-            const loanData = JSON.parse(property.loanDetails);
+        // Already a real array/object from the API (DB JSONField serialized
+        // as-is) — not a JSON string, so no JSON.parse here.
+        const loanData = property?.loan_details;
+        if (loanData) {
             // Handle array of banks (multiple loans)
             if (Array.isArray(loanData)) {
-                loanAmount = loanData.reduce((sum: number, loan: { loanAmount?: number; loanAllocationPercent?: string }) => {
+                loanAmount = loanData.reduce((sum: number, loan: LoanBankDetail) => {
                     const amount = loan.loanAmount || (loan.loanAllocationPercent ? parseFloat(loan.loanAllocationPercent) : 0);
                     return sum + amount;
                 }, 0);
                 connectedBankNames = loanData
-                    .filter((loan: { bankName?: string }) => loan.bankName && loan.bankName.trim() !== '')
-                    .map((loan: { bankName: string }) => BANKS[loan.bankName] || loan.bankName.toUpperCase().substring(0, 3));
-            } else if (loanData.bankName && loanData.bankName.trim() !== '') {
+                    .filter((loan: LoanBankDetail) => loan.bankName && loan.bankName.trim() !== '')
+                    .map((loan: LoanBankDetail) => BANKS[loan.bankName!] || loan.bankName!.toUpperCase().substring(0, 3));
+            } else if ('bankName' in loanData && loanData.bankName && loanData.bankName.trim() !== '') {
                 if (loanData.loanAmount) {
                     loanAmount = loanData.loanAmount || 0;
                 }
@@ -999,9 +1018,67 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                 }
 
 
+                {/* Document tab — loan documents attached to this property's bank/loan entries */}
+                {
+                    activeTab === 'document' && (() => {
+                        const loanData = property?.loan_details;
+                        const banks: LoanBankDetail[] = Array.isArray(loanData)
+                            ? loanData
+                            : (loanData && 'bankName' in loanData ? [loanData] : []);
+                        const docs: { bank?: string; doc: LoanDocument }[] = banks
+                            .filter(b => Boolean(b.document))
+                            .map(b => ({ bank: b.bankName, doc: b.document as LoanDocument }));
+
+                        if (docs.length === 0) {
+                            return (
+                                <div className="mt-6 bg-white rounded-xl border border-gray-200 p-8 text-center">
+                                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <FileText className="w-8 h-8 text-gray-400" />
+                                    </div>
+                                    <h3 className="text-lg font-medium text-gray-900 mb-2">Document</h3>
+                                    <p className="text-sm text-gray-500">No documents uploaded yet. Add a loan document from Edit Property → Loan Details.</p>
+                                </div>
+                            );
+                        }
+
+                        return (
+                            <div className="mt-6 bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                                {docs.map(({ bank, doc }, idx) => (
+                                    <div key={idx} className="p-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                                <FileText className="w-5 h-5 text-blue-600" />
+                                            </div>
+                                            <div>
+                                                <p className="font-medium text-gray-900">{doc.name}</p>
+                                                <p className="text-sm text-gray-500">
+                                                    {(doc.size / 1024).toFixed(1)} KB
+                                                    {bank && <> · Loan document{BANKS[bank] ? ` (${BANKS[bank]})` : ''}</>}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        {doc.url ? (
+                                            <a
+                                                href={doc.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-blue-600 hover:underline text-sm font-medium"
+                                            >
+                                                View
+                                            </a>
+                                        ) : (
+                                            <span className="text-xs text-gray-400">Not available</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        );
+                    })()
+                }
+
                 {/* Other tabs placeholder */}
                 {
-                    activeTab !== 'transaction' && activeTab !== 'ownership' && (
+                    activeTab !== 'transaction' && activeTab !== 'ownership' && activeTab !== 'document' && (
                         <div className="mt-6 bg-white rounded-xl border border-gray-200 p-8 text-center">
                             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <FileText className="w-8 h-8 text-gray-400" />

@@ -571,13 +571,21 @@ class ExtractPDFTextView(ProtectedView):
         })
 
 
+_UPLOAD_CATEGORIES = {
+    'documents': 'documents',            # OCR statements/receipts attached to transactions
+    'loan-documents': 'loan-documents',  # loan agreements attached to a property's bank/loan entry
+}
+
+
 class UploadFileView(ProtectedView):
     """
-    POST /api/ocr/upload-file — field name `file`. Stores the raw uploaded
-    file (statement, receipt, depreciation report, whatever) in S3 and
-    returns its URL, for attaching to a transaction as `receiptUrl`. Unlike
-    UploadDocumentView (which expects a fileUrl already computed elsewhere),
-    this is the endpoint that actually does the upload.
+    POST /api/ocr/upload-file — field name `file`, optional field `category`
+    (one of _UPLOAD_CATEGORIES, defaults to "documents"). Stores the raw
+    uploaded file in S3 under a category-specific prefix and returns its URL
+    — e.g. for attaching to a transaction as `receiptUrl`, or to a property's
+    loan entry as its loan document. Unlike UploadDocumentView (which expects
+    a fileUrl already computed elsewhere), this is the endpoint that actually
+    does the upload.
     """
 
     def post(self, request):
@@ -597,8 +605,10 @@ class UploadFileView(ProtectedView):
         if not settings.DOCUMENTS_S3_BUCKET:
             return error_response('Document storage is not configured', 503)
 
+        category = _UPLOAD_CATEGORIES.get(request.data.get('category'), 'documents')
+
         ext = (uploaded.name.rsplit('.', 1)[-1] if '.' in uploaded.name else 'bin').lower()
-        key = f'documents/{request.user.id}/{uuid.uuid4()}.{ext}'
+        key = f'{category}/{request.user.id}/{uuid.uuid4()}.{ext}'
 
         try:
             s3 = boto3.client('s3', region_name=settings.DOCUMENTS_S3_REGION)

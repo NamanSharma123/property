@@ -20,6 +20,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { addProperty, updateProperty, getProperties, type Property } from '@/lib/property';
+import { documentsApi } from '@/lib/api';
 import {
   Tooltip,
   TooltipContent,
@@ -62,7 +63,7 @@ interface BankDetails {
   loanAllocationPercent: string;
   allocateByDateRange: boolean;
   allocations: LoanAllocation[];
-  document?: { name: string; size: number } | null;
+  document?: { name: string; size: number; url?: string } | null;
 }
 
 const STATES = [
@@ -129,6 +130,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [uploadingDocFor, setUploadingDocFor] = useState<Record<string, boolean>>({});
 
   // Step 1: Property Details
   const [locationMode, setLocationMode] = useState<'choose' | 'manual'>('manual');
@@ -843,7 +845,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
     }
   };
 
-  const updateBank = (id: string, field: keyof BankDetails, value: string | boolean | LoanAllocation[] | { name: string; size: number } | null) => {
+  const updateBank = (id: string, field: keyof BankDetails, value: string | boolean | LoanAllocation[] | { name: string; size: number; url?: string } | null) => {
     setBanks(banks.map(b => b.id === id ? { ...b, [field]: value } : b));
 
     if (typeof value !== 'string') return;
@@ -1967,20 +1969,40 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
                       ref={(el) => { fileInputRefs.current[bank.id] = el; }}
                       accept=".pdf,.jpg,.jpeg,.png"
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files?.[0];
-                        if (file) {
-                          // Check file size (max 20MB)
-                          if (file.size > 20 * 1024 * 1024) {
-                            alert('File size exceeds 20MB limit');
-                            return;
+                        e.target.value = ''; // allow re-selecting the same file later
+                        if (!file) return;
+
+                        // Check file size (max 20MB)
+                        if (file.size > 20 * 1024 * 1024) {
+                          alert('File size exceeds 20MB limit');
+                          return;
+                        }
+
+                        setUploadingDocFor(prev => ({ ...prev, [bank.id]: true }));
+                        try {
+                          const result = await documentsApi.upload(file, 'loan-documents');
+                          if (result.success && result.data?.url) {
+                            updateBank(bank.id, 'document', {
+                              name: file.name,
+                              size: file.size,
+                              url: result.data.url,
+                            });
+                          } else {
+                            alert(result.error || 'Failed to upload document. Please try again.');
                           }
-                          // Store file info (not the actual file)
-                          updateBank(bank.id, 'document', { name: file.name, size: file.size });
+                        } finally {
+                          setUploadingDocFor(prev => ({ ...prev, [bank.id]: false }));
                         }
                       }}
                     />
-                    {bank.document ? (
+                    {uploadingDocFor[bank.id] ? (
+                      <div className="mt-2 border-2 border-dashed border-gray-200 rounded-lg p-6 text-center bg-white flex flex-col items-center">
+                        <Loader2 className="w-6 h-6 text-blue-500 animate-spin mb-2" />
+                        <p className="text-gray-500">Uploading…</p>
+                      </div>
+                    ) : bank.document ? (
                       // Show uploaded file with checkmark
                       <div className="mt-2 border-2 border-green-200 rounded-lg p-4 bg-green-50 flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -1989,7 +2011,22 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
                           </div>
                           <div>
                             <p className="font-medium text-gray-900 truncate max-w-[300px]">{bank.document.name}</p>
-                            <p className="text-sm text-gray-500">{(bank.document.size / 1024).toFixed(1)} KB</p>
+                            <p className="text-sm text-gray-500">
+                              {(bank.document.size / 1024).toFixed(1)} KB
+                              {bank.document.url && (
+                                <>
+                                  {' · '}
+                                  <a
+                                    href={bank.document.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline"
+                                  >
+                                    View
+                                  </a>
+                                </>
+                              )}
+                            </p>
                           </div>
                         </div>
                         <Button

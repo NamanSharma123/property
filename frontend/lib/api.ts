@@ -570,9 +570,10 @@ export const notificationsApi = {
 // Documents API — raw multipart upload, bypasses apiFetch since that forces
 // a JSON Content-Type header (which breaks multipart/form-data uploads).
 export const documentsApi = {
-    async upload(file: File): Promise<ApiResponse<{ url: string; fileName: string; fileSize: number; fileType: string }>> {
+    async upload(file: File, category?: 'documents' | 'loan-documents'): Promise<ApiResponse<{ url: string; fileName: string; fileSize: number; fileType: string }>> {
         const formData = new FormData();
         formData.append('file', file);
+        if (category) formData.append('category', category);
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/ocr/upload-file`, {
