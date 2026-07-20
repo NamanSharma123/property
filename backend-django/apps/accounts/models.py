@@ -113,6 +113,29 @@ class Session(TimeStampedModel):
         ]
 
 
+class PasswordResetToken(TimeStampedModel):
+    """
+    A one-time, time-limited token emailed to the user for the "forgot
+    password" flow. New table — the original Node backend never had this
+    feature either, so no 1:1 schema-compatibility constraint here.
+    """
+    user = models.ForeignKey('accounts.User', on_delete=models.CASCADE, db_column='user_id')
+    token = models.CharField(max_length=255, unique=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'password_reset_tokens'
+        indexes = [
+            models.Index(fields=['token'], name='idx_pw_reset_token'),
+            models.Index(fields=['user'], name='idx_pw_reset_user_id'),
+        ]
+
+    def is_valid(self):
+        from django.utils import timezone
+        return self.used_at is None and self.expires_at > timezone.now()
+
+
 class ActivityLog(CreatedModel):
     user = models.ForeignKey('accounts.User', on_delete=models.CASCADE, db_column='user_id')
     action = models.CharField(max_length=50)

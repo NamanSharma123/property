@@ -305,6 +305,20 @@ export const authApi = {
             body: JSON.stringify({ password }),
         });
     },
+
+    async forgotPassword(email: string): Promise<ApiResponse> {
+        return apiFetch('/api/auth/forgot-password', {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        });
+    },
+
+    async resetPassword(token: string, newPassword: string): Promise<ApiResponse> {
+        return apiFetch('/api/auth/reset-password', {
+            method: 'POST',
+            body: JSON.stringify({ token, newPassword }),
+        });
+    },
 };
 
 // Properties API

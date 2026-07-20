@@ -138,3 +138,21 @@ CELERY_TASK_ALWAYS_EAGER = False
 # S3, since App Runner has no persistent disk across deploys/restarts.
 DOCUMENTS_S3_BUCKET = config('DOCUMENTS_S3_BUCKET', default='')
 DOCUMENTS_S3_REGION = config('DOCUMENTS_S3_REGION', default='ap-southeast-2')
+
+# Frontend base URL — used to build links inside emails (password reset, etc.)
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
+
+# Email (password reset). Falls back to Django's console backend (prints to
+# stdout instead of sending) when no SMTP password is configured, so local
+# dev works without needing real credentials.
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=f'Properly <{EMAIL_HOST_USER}>')
+
+if EMAIL_HOST_PASSWORD:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+    EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+    EMAIL_USE_TLS = True
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

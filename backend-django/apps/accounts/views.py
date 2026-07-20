@@ -4,11 +4,13 @@ signup/login/password validators from backend/src/middleware/validators.js.
 """
 import random
 import re
+import secrets
 import time
 from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.utils import timezone
 from rest_framework.response import Response
@@ -19,7 +21,7 @@ from apps.common.utils import get_ip, get_user_agent, log_activity
 from apps.common.views import ProtectedView, PublicView
 
 from .authentication import generate_access_token, generate_refresh_token
-from .models import Session, User
+from .models import PasswordResetToken, Session, User
 from .serializers import format_session, format_user
 
 BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz'
@@ -365,3 +367,95 @@ class DeleteAccountView(ProtectedView):
         User.objects.filter(id=user.id).delete()
 
         return Response({'success': True, 'message': 'Account deleted successfully'})
+
+
+class ForgotPasswordView(PublicView):
+    """POST /api/auth/forgot-password — {email}. Always responds the same
+    way regardless of whether the account exists, to avoid leaking which
+    emails are registered."""
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip().lower()
+        if not email:
+            return error_response('Email is required', 400)
+
+        generic_response = Response({
+            'success': True,
+            'message': 'If an account exists for that email, a password reset link has been sent.',
+        })
+
+        user = User.objects.filter(email=email).first()
+        if not user:
+            return generic_response
+
+        token = secrets.token_urlsafe(48)
+        PasswordResetToken.objects.create(
+            user=user,
+            token=token,
+            expires_at=timezone.now() + timedelta(minutes=30),
+        )
+
+        reset_url = f"{settings.FRONTEND_URL}/auth/reset-password?token={token}"
+        try:
+            send_mail(
+                subject='Reset your Properly password',
+                message=(
+                    f"Hi {user.name},\n\n"
+                    "We received a request to reset your Properly password. "
+                    "Click the link below to choose a new one — it expires in 30 minutes:\n\n"
+                    f"{reset_url}\n\n"
+                    "If you didn't request this, you can safely ignore this email — "
+                    "your password won't be changed."
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+            log_activity(user.id, 'password_reset_requested', request=request, success=True)
+        except Exception as exc:
+            log_activity(user.id, 'password_reset_email_failed', request=request,
+                         description='Failed to send password reset email',
+                         error_message=str(exc), success=False)
+
+        return generic_response
+
+
+class ResetPasswordView(PublicView):
+    """POST /api/auth/reset-password — {token, newPassword}."""
+
+    def post(self, request):
+        token = request.data.get('token')
+        new_password = request.data.get('newPassword') or ''
+
+        if not token:
+            return error_response('Reset token is required', 400)
+
+        errors = []
+        if not new_password:
+            errors.append({'field': 'newPassword', 'message': 'New password is required'})
+        else:
+            _validate_password_strength(new_password, errors, field='newPassword')
+        if errors:
+            return _validation_error(errors)
+
+        reset_token = PasswordResetToken.objects.filter(token=token).select_related('user').first()
+        if not reset_token or not reset_token.is_valid():
+            return error_response('This reset link is invalid or has expired. Please request a new one.', 400)
+
+        user = reset_token.user
+        User.objects.filter(id=user.id).update(
+            password_hash=hash_password(new_password),
+            password_changed_at=timezone.now(),
+        )
+        reset_token.used_at = timezone.now()
+        reset_token.save(update_fields=['used_at'])
+
+        # A password reset should force re-login everywhere, not just on this device.
+        Session.objects.filter(user_id=user.id).update(is_active=False)
+
+        log_activity(user.id, 'password_reset_completed', request=request, success=True)
+
+        return Response({
+            'success': True,
+            'message': 'Password reset successfully. Please log in with your new password.',
+        })
