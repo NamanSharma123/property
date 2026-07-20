@@ -625,8 +625,10 @@ class UploadFileView(ProtectedView):
 
         return Response({
             'success': True,
-            'url': url,
-            'fileName': uploaded.name,
-            'fileSize': uploaded.size,
-            'fileType': uploaded.content_type,
+            'data': {
+                'url': url,
+                'fileName': uploaded.name,
+                'fileSize': uploaded.size,
+                'fileType': uploaded.content_type,
+            },
         }, status=201)
