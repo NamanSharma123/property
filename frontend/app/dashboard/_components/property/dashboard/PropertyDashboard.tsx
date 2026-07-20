@@ -13,7 +13,7 @@ import {
     AlertCircle
 } from 'lucide-react';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { propertiesApi, transactionsApi } from '@/lib/api';
+import { propertiesApi, transactionsApi, documentsApi } from '@/lib/api';
 
 interface LoanDocument {
     name: string;
@@ -130,6 +130,15 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('transaction');
+
+    const openDocument = async (storedUrl: string) => {
+        const result = await documentsApi.getViewUrl(storedUrl);
+        if (result.success && result.data?.url) {
+            window.open(result.data.url, '_blank', 'noopener,noreferrer');
+        } else {
+            alert(result.error || 'Could not open document. Please try again.');
+        }
+    };
     const [filters, setFilters] = useState<{
         fromDate: string;
         toDate: string;
@@ -1058,14 +1067,13 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                                             </div>
                                         </div>
                                         {doc.url ? (
-                                            <a
-                                                href={doc.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
+                                            <button
+                                                type="button"
+                                                onClick={() => openDocument(doc.url!)}
                                                 className="text-blue-600 hover:underline text-sm font-medium"
                                             >
                                                 View
-                                            </a>
+                                            </button>
                                         ) : (
                                             <span className="text-xs text-gray-400">Not available</span>
                                         )}

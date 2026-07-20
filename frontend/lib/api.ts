@@ -604,6 +604,12 @@ export const documentsApi = {
             };
         }
     },
+
+    // The documents bucket is private — stored URLs aren't directly
+    // browsable. Exchange one for a short-lived presigned URL before opening it.
+    async getViewUrl(storedUrl: string): Promise<ApiResponse<{ url: string }>> {
+        return apiFetch<{ url: string }>(`/api/ocr/document-url?url=${encodeURIComponent(storedUrl)}`);
+    },
 };
 
 const api = {

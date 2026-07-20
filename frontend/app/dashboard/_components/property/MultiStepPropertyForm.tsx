@@ -132,6 +132,15 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [uploadingDocFor, setUploadingDocFor] = useState<Record<string, boolean>>({});
 
+  const openDocument = async (storedUrl: string) => {
+    const result = await documentsApi.getViewUrl(storedUrl);
+    if (result.success && result.data?.url) {
+      window.open(result.data.url, '_blank', 'noopener,noreferrer');
+    } else {
+      alert(result.error || 'Could not open document. Please try again.');
+    }
+  };
+
   // Step 1: Property Details
   const [locationMode, setLocationMode] = useState<'choose' | 'manual'>('manual');
   const [location, setLocation] = useState('');
@@ -2016,14 +2025,13 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
                               {bank.document.url && (
                                 <>
                                   {' · '}
-                                  <a
-                                    href={bank.document.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                  <button
+                                    type="button"
+                                    onClick={() => openDocument(bank.document!.url!)}
                                     className="text-blue-600 hover:underline"
                                   >
                                     View
-                                  </a>
+                                  </button>
                                 </>
                               )}
                             </p>

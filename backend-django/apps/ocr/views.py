@@ -632,3 +632,38 @@ class UploadFileView(ProtectedView):
                 'fileType': uploaded.content_type,
             },
         }, status=201)
+
+
+class DocumentViewUrlView(ProtectedView):
+    """
+    GET /api/ocr/document-url?url=<stored s3 https url>
+
+    The bucket is private, so the plain https URLs saved on transactions/
+    loan entries by UploadFileView aren't directly browsable — they 404/403
+    with AccessDenied. This exchanges one of those stored URLs for a
+    short-lived presigned GET URL, after checking the key's user-id path
+    segment matches the requesting user (owner-only, since the key itself
+    is the only auth this endpoint has to go on).
+    """
+
+    def get(self, request):
+        import boto3
+        from django.conf import settings
+
+        stored_url = request.query_params.get('url', '')
+        expected_prefix = f'https://{settings.DOCUMENTS_S3_BUCKET}.s3.{settings.DOCUMENTS_S3_REGION}.amazonaws.com/'
+        if not stored_url.startswith(expected_prefix):
+            return error_response('Invalid document url', 400)
+
+        key = stored_url[len(expected_prefix):].split('?', 1)[0]
+        parts = key.split('/')
+        if len(parts) != 3 or parts[0] not in _UPLOAD_CATEGORIES or parts[1] != str(request.user.id):
+            return error_response('Document not found', 404)
+
+        s3 = boto3.client('s3', region_name=settings.DOCUMENTS_S3_REGION)
+        presigned_url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': settings.DOCUMENTS_S3_BUCKET, 'Key': key},
+            ExpiresIn=300,
+        )
+        return Response({'success': True, 'data': {'url': presigned_url}})
