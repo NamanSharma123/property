@@ -97,6 +97,57 @@ export function buildIncomeExpenditureReport(
   };
 }
 
+export interface CostBaseRow {
+  propertyId: string;
+  propertyName: string;
+  purchasePrice: number;
+  costsByCategory: { category: string; label: string; amount: number }[];
+  totalCostBase: number;
+}
+
+export interface CostBaseReport {
+  asOfDate: string;
+  rows: CostBaseRow[];
+}
+
+/**
+ * CGT cost base as of a given date: purchase price plus every 'cost'-type
+ * transaction (stamp duty, conveyancer fees, capital improvements, ...)
+ * dated on or before that date. Same "just sum the transactions" approach
+ * as the income & expenditure report — no indexation or other CGT
+ * adjustments are applied.
+ */
+export function buildCostBaseReport(
+  properties: Property[],
+  transactions: Transaction[],
+  asOfDate: string
+): CostBaseReport {
+  const costCategories = Object.entries(categoryLabelsMap).filter(([, info]) => info.type === 'cost');
+
+  const rows: CostBaseRow[] = properties.map(property => {
+    const propertyCostTx = transactions.filter(t =>
+      t.propertyId === property.id && t.type === 'cost' && t.date <= asOfDate
+    );
+
+    const costsByCategory = costCategories
+      .map(([category, info]) => ({
+        category,
+        label: info.label,
+        amount: propertyCostTx
+          .filter(t => t.category === category)
+          .reduce((sum, t) => sum + (t.amount || 0), 0),
+      }))
+      .filter(row => row.amount !== 0);
+
+    const purchasePrice = Number(property.purchase_price) || 0;
+    const totalCostBase = purchasePrice + costsByCategory.reduce((sum, row) => sum + row.amount, 0);
+
+    return { propertyId: property.id, propertyName: property.name, purchasePrice, costsByCategory, totalCostBase };
+  });
+
+  return { asOfDate, rows };
+}
+
 export function reportToCSV(report: ReportData): string {
   const lines: string[] = [];
   const header = ['Category', ...report.properties.map(p => p.name)];

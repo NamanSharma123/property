@@ -4,7 +4,7 @@ import React, { useState } from "react";
 
 import { Property } from "@/lib/property";
 import { getTransactionsInRange } from "@/lib/transaction";
-import { buildIncomeExpenditureReport, getFinancialYearRange, type ReportData } from "@/lib/reports";
+import { buildIncomeExpenditureReport, buildCostBaseReport, getFinancialYearRange, type ReportData, type CostBaseReport } from "@/lib/reports";
 
 interface GenerateReportsProps {
   reportType: string;
@@ -24,6 +24,7 @@ interface GenerateReportsProps {
   properties: Property[];
   onReportGenerated: (report: ReportData | null) => void;
   onGenerateLoanSummary: () => void;
+  onCostBaseGenerated: (report: CostBaseReport | null) => void;
 }
 
 export default function GenerateReports({
@@ -44,6 +45,7 @@ export default function GenerateReports({
   properties,
   onReportGenerated,
   onGenerateLoanSummary,
+  onCostBaseGenerated,
 }: GenerateReportsProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -89,13 +91,29 @@ export default function GenerateReports({
     }
   };
 
-  const handleGenerateCostBaseReport = () => {
+  const handleGenerateCostBaseReport = async () => {
     if (properties.length === 0) {
       alert("No properties available.");
       return;
     }
-    console.log("Generate Cost Base Report", { property, selectedDate });
-    alert("Report generation started...");
+    if (!selectedDate) {
+      alert("Please choose a date.");
+      return;
+    }
+
+    const selectedProperties = property === "all" ? properties : properties.filter(p => p.id === property);
+
+    setIsGenerating(true);
+    onCostBaseGenerated(null);
+    try {
+      const transactions = await getTransactionsInRange({ endDate: selectedDate });
+      const report = buildCostBaseReport(selectedProperties, transactions, selectedDate);
+      onCostBaseGenerated(report);
+    } catch {
+      alert("Failed to generate report. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const hasProperties = properties.length > 0;
@@ -187,12 +205,12 @@ export default function GenerateReports({
               </div>
               <div className="mt-6 flex flex-wrap justify-center gap-4">
                 <button
-                  className={`px-6 py-2 rounded-full bg-blue-600 text-white font-medium shadow ${!hasProperties ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`px-6 py-2 rounded-full bg-blue-600 text-white font-medium shadow ${(!hasProperties || isGenerating) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   type="button"
                   onClick={handleGenerateCostBaseReport}
-                  disabled={!hasProperties}
+                  disabled={!hasProperties || isGenerating}
                 >
-                  Generate Report
+                  {isGenerating ? 'Generating…' : 'Generate Report'}
                 </button>
                 <button
                   className={`px-5 py-2 rounded-full bg-yellow-400 text-gray-900 font-medium ${!hasProperties ? 'opacity-50 cursor-not-allowed' : ''}`}

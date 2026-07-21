@@ -6,8 +6,9 @@ import TaxSupporting from "./taxsupporting";
 import DownloadDocuments from "./downloaddocuments";
 import ReportOutput from "./ReportOutput";
 import LoanSummaryOutput from "./LoanSummaryOutput";
+import CostBaseOutput from "./CostBaseOutput";
 import { getProperties, type Property } from "@/lib/property";
-import type { ReportData } from "@/lib/reports";
+import type { ReportData, CostBaseReport } from "@/lib/reports";
 
 
 export default function ReportsContent() {
@@ -16,10 +17,12 @@ export default function ReportsContent() {
   const [property, setProperty] = useState<string>("all");
   const [duration, setDuration] = useState<string>("fy");
   const [year, setYear] = useState<string>("FY 24-25");
-  const [selectedDate, setSelectedDate] = useState<string>("18-11-2025");
+  // ISO format (YYYY-MM-DD) — required by the native <input type="date"> below.
+  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [properties, setProperties] = useState<Property[]>([]);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [showLoanSummary, setShowLoanSummary] = useState(false);
+  const [costBaseReport, setCostBaseReport] = useState<CostBaseReport | null>(null);
 
   // Fetch properties on mount
   useEffect(() => {
@@ -61,6 +64,7 @@ export default function ReportsContent() {
             properties={properties}
             onReportGenerated={setReportData}
             onGenerateLoanSummary={() => setShowLoanSummary(true)}
+            onCostBaseGenerated={setCostBaseReport}
           />
 
           {reportData && (
@@ -68,6 +72,9 @@ export default function ReportsContent() {
           )}
           {showLoanSummary && (
             <LoanSummaryOutput properties={properties} onClose={() => setShowLoanSummary(false)} />
+          )}
+          {costBaseReport && (
+            <CostBaseOutput report={costBaseReport} onClose={() => setCostBaseReport(null)} />
           )}
         </div>
 
