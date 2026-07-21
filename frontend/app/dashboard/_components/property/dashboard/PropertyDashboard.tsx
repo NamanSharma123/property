@@ -1054,9 +1054,60 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                     })()
                 }
 
+                {/* Loan tab — the bank/loan entries backing this property's Loan/LVR figures */}
+                {
+                    activeTab === 'loan' && (
+                        loanSummary.banks.length === 0 ? (
+                            <div className="mt-6 bg-white rounded-xl border border-gray-200 p-8 text-center">
+                                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <FileText className="w-8 h-8 text-gray-400" />
+                                </div>
+                                <h3 className="text-lg font-medium text-gray-900 mb-2">Loan</h3>
+                                <p className="text-sm text-gray-500">No loans added yet. Add one from Edit Property → Loan Details.</p>
+                            </div>
+                        ) : (
+                            <div className="mt-6 bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                                {loanSummary.banks.map((bank, idx) => {
+                                    const loanAmount = Number(bank.loanAmount) || 0;
+                                    const allocation = bank.loanAllocationPercent ? parseFloat(bank.loanAllocationPercent) : 100;
+                                    const attributed = loanAmount * (allocation / 100);
+                                    return (
+                                        <div key={bank.id || idx} className="p-4 flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                                    <span className="text-blue-600 text-xs font-bold">{getBankLabel(bank.bankName)}</span>
+                                                </div>
+                                                <div>
+                                                    <p className="font-medium text-gray-900">
+                                                        {getBankLabel(bank.bankName)}
+                                                        <span className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${idx === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                            {idx === 0 ? 'Primary' : 'Secondary'}
+                                                        </span>
+                                                    </p>
+                                                    <p className="text-sm text-gray-500">
+                                                        Loan amount: ${loanAmount.toLocaleString('en-AU', { minimumFractionDigits: 2 })} · Allocation: {allocation}%
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-sm text-gray-500">Attributed to this property</p>
+                                                <p className="font-semibold text-gray-900">${attributed.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                <div className="p-4 flex items-center justify-between bg-gray-50">
+                                    <p className="font-semibold text-gray-900">Total</p>
+                                    <p className="font-semibold text-gray-900">${loanAmount.toLocaleString('en-AU', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                            </div>
+                        )
+                    )
+                }
+
                 {/* Other tabs placeholder */}
                 {
-                    activeTab !== 'transaction' && activeTab !== 'ownership' && activeTab !== 'document' && (
+                    activeTab !== 'transaction' && activeTab !== 'ownership' && activeTab !== 'document' && activeTab !== 'loan' && (
                         <div className="mt-6 bg-white rounded-xl border border-gray-200 p-8 text-center">
                             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <FileText className="w-8 h-8 text-gray-400" />
