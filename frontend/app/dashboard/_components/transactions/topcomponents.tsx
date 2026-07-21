@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CalendarIcon } from "lucide-react";
-import { getTransactions } from "@/lib/transaction";
+import { getProperties } from "@/lib/property";
 import { MultiSelect, MultiSelectOption } from "@/components/ui/multi-select";
 
 // Transaction source options (static)
@@ -77,7 +77,9 @@ export const TopComponents = ({
   const [transactionSource, setTransactionSource] = useState<string[]>(initialFilters?.transactionSource || []);
   const [category, setCategory] = useState<string[]>(initialFilters?.category || []);
 
-  // Dynamic property list from transactions
+  // Property list for the filter — from the user's actual properties, not
+  // just ones that happen to already have a transaction (a property with
+  // zero transactions still needs to be selectable/filterable).
   const [propertyOptions, setPropertyOptions] = useState<MultiSelectOption[]>([]);
   const [isLoadingProperties, setIsLoadingProperties] = useState(false);
 
@@ -102,25 +104,22 @@ export const TopComponents = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount - intentionally excluding 'property' to avoid re-triggering
 
-  // Load unique property names from transactions with abort controller
+  // Load the user's full property list (not derived from transactions —
+  // properties with zero transactions still need to be filterable).
   const loadPropertyOptions = useCallback(async (signal?: AbortSignal) => {
     setIsLoadingProperties(true);
     try {
-      const transactions = await getTransactions();
+      const properties = await getProperties();
 
       // Check if aborted before setting state
       if (signal?.aborted) return;
 
-      const uniqueProperties = Array.from(
-        new Set(
-          transactions
-            .map(t => t.propertyName)
-            .filter((name): name is string => Boolean(name) && name !== undefined && name.trim() !== '')
-        )
+      const uniqueNames = Array.from(
+        new Set(properties.map(p => p.name).filter((name): name is string => Boolean(name?.trim())))
       ).sort();
 
       setPropertyOptions(
-        uniqueProperties.map(name => ({ value: name, label: name }))
+        uniqueNames.map(name => ({ value: name, label: name }))
       );
     } catch (error) {
       if (signal?.aborted) return;
