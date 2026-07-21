@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { propertiesApi, transactionsApi, documentsApi } from '@/lib/api';
+import { getLoanSummary, getBankLabel } from '@/lib/property';
 
 interface LoanDocument {
     name: string;
@@ -163,44 +164,13 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
     const netIncome = income - expenses;
     const marketValue = parseFloat(String(property?.current_value)) || parseFloat(String(property?.purchase_price)) || 0;
 
-    // Bank name mapping (value to label)
-    const BANKS: Record<string, string> = {
-        'commonwealth': 'CBA',
-        'westpac': 'WBC',
-        'anz': 'ANZ',
-        'nab': 'NAB',
-        'macquarie': 'MAC',
-        'ing': 'ING',
-        'other': 'OTH',
-    };
-
-    // Parse loan details and extract bank info
-    let loanAmount = 0;
-    let netEquity = marketValue;
-    let connectedBankNames: string[] = [];
-    try {
-        // Already a real array/object from the API (DB JSONField serialized
-        // as-is) — not a JSON string, so no JSON.parse here.
-        const loanData = property?.loan_details;
-        if (loanData) {
-            // Handle array of banks (multiple loans)
-            if (Array.isArray(loanData)) {
-                loanAmount = loanData.reduce((sum: number, loan: LoanBankDetail) => {
-                    const amount = loan.loanAmount || (loan.loanAllocationPercent ? parseFloat(loan.loanAllocationPercent) : 0);
-                    return sum + amount;
-                }, 0);
-                connectedBankNames = loanData
-                    .filter((loan: LoanBankDetail) => loan.bankName && loan.bankName.trim() !== '')
-                    .map((loan: LoanBankDetail) => BANKS[loan.bankName!] || loan.bankName!.toUpperCase().substring(0, 3));
-            } else if ('bankName' in loanData && loanData.bankName && loanData.bankName.trim() !== '') {
-                if (loanData.loanAmount) {
-                    loanAmount = loanData.loanAmount || 0;
-                }
-                connectedBankNames = [BANKS[loanData.bankName] || loanData.bankName.toUpperCase().substring(0, 3)];
-            }
-            netEquity = marketValue - loanAmount;
-        }
-    } catch { }
+    // Loan Allocation % is the share of a loan's balance attributed to this
+    // property (relevant when one loan facility funds multiple properties),
+    // not a share of market value. See lib/property.ts.
+    const loanSummary = getLoanSummary({ current_value: marketValue, loan_details: property?.loan_details });
+    const loanAmount = loanSummary.totalLoan;
+    const netEquity = loanSummary.netEquity;
+    const connectedBankNames = loanSummary.banks.map((loan) => getBankLabel(loan.bankName));
 
     const purchaseCost = property?.purchase_price || 0;
 
@@ -1062,7 +1032,7 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                                                 <p className="font-medium text-gray-900">{doc.name}</p>
                                                 <p className="text-sm text-gray-500">
                                                     {(doc.size / 1024).toFixed(1)} KB
-                                                    {bank && <> · Loan document{BANKS[bank] ? ` (${BANKS[bank]})` : ''}</>}
+                                                    {bank && <> · Loan document{getBankLabel(bank) ? ` (${getBankLabel(bank)})` : ''}</>}
                                                 </p>
                                             </div>
                                         </div>

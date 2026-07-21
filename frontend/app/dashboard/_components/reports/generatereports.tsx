@@ -1,8 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 
 import { Property } from "@/lib/property";
+import { getTransactionsInRange } from "@/lib/transaction";
+import { buildIncomeExpenditureReport, getFinancialYearRange, type ReportData } from "@/lib/reports";
 
 interface GenerateReportsProps {
   reportType: string;
@@ -20,6 +22,8 @@ interface GenerateReportsProps {
   reportTypeTabs: { id: string; label: string }[];
   years: string[];
   properties: Property[];
+  onReportGenerated: (report: ReportData | null) => void;
+  onGenerateLoanSummary: () => void;
 }
 
 export default function GenerateReports({
@@ -38,17 +42,16 @@ export default function GenerateReports({
   reportTypeTabs,
   years,
   properties,
+  onReportGenerated,
+  onGenerateLoanSummary,
 }: GenerateReportsProps) {
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Validation function
-  const handleGenerateReport = () => {
+  const handleGenerateReport = async () => {
     if (properties.length === 0) {
       alert("No properties available to generate a report.");
       return;
-    }
-
-    if (property === "all" && reportScope === "unit") {
-      // Allow all properties unit wise? Maybe, but might be messy.
     }
 
     if (property !== "all") {
@@ -62,8 +65,28 @@ export default function GenerateReports({
       }
     }
 
-    console.log("Generate report", { reportType, reportScope, property, duration, year });
-    alert("Report generation started...");
+    if (reportScope !== "full") {
+      alert(`${reportScope === "ownership" ? "Ownership Wise" : "Unit Wise"} reports aren't available yet — showing the Full Report instead.`);
+    }
+
+    if (duration !== "fy") {
+      alert("Monthly reports aren't available yet — showing the current Financial Year instead.");
+    }
+
+    const selectedProperties = property === "all" ? properties : properties.filter(p => p.id === property);
+    const { startDate, endDate } = getFinancialYearRange(year);
+
+    setIsGenerating(true);
+    onReportGenerated(null);
+    try {
+      const transactions = await getTransactionsInRange({ startDate, endDate });
+      const report = buildIncomeExpenditureReport(selectedProperties, transactions, startDate, endDate);
+      onReportGenerated(report);
+    } catch {
+      alert("Failed to generate report. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleGenerateCostBaseReport = () => {
@@ -117,10 +140,7 @@ export default function GenerateReports({
                 className={`px-6 py-2 rounded-full bg-blue-600 text-white font-medium shadow ${!hasProperties ? 'opacity-50 cursor-not-allowed' : ''}`}
                 type="button"
                 onClick={() => {
-                  if (hasProperties) {
-                    console.log("Generate Loan Summary Report");
-                    alert("Loan Summary Report generated");
-                  }
+                  if (hasProperties) onGenerateLoanSummary();
                 }}
                 disabled={!hasProperties}
               >
@@ -279,12 +299,12 @@ export default function GenerateReports({
 
               <div className="mt-6 flex flex-wrap justify-center gap-4">
                 <button
-                  className={`px-6 py-2 rounded-full bg-blue-600 text-white font-medium shadow ${!hasProperties ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`px-6 py-2 rounded-full bg-blue-600 text-white font-medium shadow ${(!hasProperties || isGenerating) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   type="button"
                   onClick={handleGenerateReport}
-                  disabled={!hasProperties}
+                  disabled={!hasProperties || isGenerating}
                 >
-                  Generate Report
+                  {isGenerating ? 'Generating…' : 'Generate Report'}
                 </button>
                 <button
                   className={`px-5 py-2 rounded-full bg-yellow-400 text-gray-900 font-medium ${!hasProperties ? 'opacity-50 cursor-not-allowed' : ''}`}

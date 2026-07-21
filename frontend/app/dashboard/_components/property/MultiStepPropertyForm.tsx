@@ -60,6 +60,7 @@ interface BankDetails {
   bankName: string;
   bsbNumber: string;
   loanAccountNumber: string;
+  loanAmount: string;
   loanAllocationPercent: string;
   allocateByDateRange: boolean;
   allocations: LoanAllocation[];
@@ -186,6 +187,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
       bankName: '',
       bsbNumber: '',
       loanAccountNumber: '',
+      loanAmount: '',
       loanAllocationPercent: '',
       allocateByDateRange: false,
       allocations: [],
@@ -357,14 +359,16 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
             : loanDetailsStr;
 
           if (Array.isArray(loanData)) {
-            setBanks(loanData.map((loan: { bankName?: string; bsbNumber?: string; bsb?: string; loanAccountNumber?: string; accountNumber?: string; loanAllocationPercent?: string; allocateByDateRange?: boolean; allocations?: LoanAllocation[] }, idx: number) => ({
+            setBanks(loanData.map((loan: { bankName?: string; bsbNumber?: string; bsb?: string; loanAccountNumber?: string; accountNumber?: string; loanAmount?: number | string; loanAllocationPercent?: string; allocateByDateRange?: boolean; allocations?: LoanAllocation[]; document?: { name: string; size: number; url?: string } | null }, idx: number) => ({
               id: (idx + 1).toString(),
               bankName: loan.bankName || '',
               bsbNumber: loan.bsbNumber || loan.bsb || '',
               loanAccountNumber: loan.loanAccountNumber || loan.accountNumber || '',
+              loanAmount: loan.loanAmount !== undefined && loan.loanAmount !== null ? String(loan.loanAmount) : '',
               loanAllocationPercent: loan.loanAllocationPercent || '',
               allocateByDateRange: loan.allocateByDateRange || false,
               allocations: loan.allocations || [],
+              document: loan.document || null,
             })));
           } else if (loanData.bankName) {
             setBanks([{
@@ -372,9 +376,11 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
               bankName: loanData.bankName || '',
               bsbNumber: loanData.bsb || '',
               loanAccountNumber: loanData.accountNumber || '',
+              loanAmount: '',
               loanAllocationPercent: '',
               allocateByDateRange: false,
               allocations: [],
+              document: null,
             }]);
           }
         } catch (err) {
@@ -558,6 +564,14 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
     return undefined;
   };
 
+  const getLoanAmountError = (val: string) => {
+    if (!val.trim()) return 'Loan amount is required';
+    const amount = parseCurrency(val);
+    if (isNaN(amount) || amount <= 0) return 'Must be a positive amount';
+    if (amount > 999999999) return 'Exceeds maximum';
+    return undefined;
+  };
+
   // Generate address preview
   const getAddressPreview = () => {
     if (propertyStructure === 'single-dwelling') return [];
@@ -675,7 +689,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
 
     banks.forEach((bank, index) => {
       // Check if ANY field has content
-      const hasAnyData = bank.bankName || bank.bsbNumber || bank.loanAccountNumber || bank.loanAllocationPercent;
+      const hasAnyData = bank.bankName || bank.bsbNumber || bank.loanAccountNumber || bank.loanAmount || bank.loanAllocationPercent;
 
       if (hasAnyData) {
         const bnErr = getBankNameError(bank.bankName);
@@ -686,6 +700,9 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
 
         const accErr = getLoanAccountError(bank.loanAccountNumber);
         if (accErr) errors[`bank${index + 1}Account`] = accErr;
+
+        const laErr = getLoanAmountError(bank.loanAmount);
+        if (laErr) errors[`bank${index + 1}LoanAmount`] = laErr;
 
         const allocErr = getOwnershipPercentError(bank.loanAllocationPercent);
         if (allocErr) errors[`bank${index + 1}Allocation`] = allocErr;
@@ -830,6 +847,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
       bankName: '',
       bsbNumber: '',
       loanAccountNumber: '',
+      loanAmount: '',
       loanAllocationPercent: '',
       allocateByDateRange: false,
       allocations: [],
@@ -877,6 +895,9 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
     } else if (field === 'loanAccountNumber') {
       key = `bank${i}Account`;
       validator = getLoanAccountError;
+    } else if (field === 'loanAmount') {
+      key = `bank${i}LoanAmount`;
+      validator = getLoanAmountError;
     } else if (field === 'loanAllocationPercent') {
       key = `bank${i}Allocation`;
       validator = getOwnershipPercentError;
@@ -994,14 +1015,6 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
       data.append('usage', selectedPropertyType?.usage || 'Investment');
       data.append('marketValue', marketValue ? `$${marketValue.replace(/[$,]/g, '')}` : '$0');
       data.append('ownership', OWNERSHIP_TYPES.find(o => o.value === ownershipType)?.label || 'Individual');
-
-      // Calculate total loan from all banks
-      const totalLoan = banks.reduce((sum, b) => {
-        const percent = parseFloat(b.loanAllocationPercent) || 0;
-        const mv = parseFloat(marketValue.replace(/[$,]/g, '')) || 0;
-        return sum + (mv * percent / 100);
-      }, 0);
-      data.append('loan', `$${totalLoan}`);
 
       // Store ownership details as JSON
       const ownershipDetails = {
@@ -1806,7 +1819,15 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
               {banks.map((bank, bankIdx) => (
                 <div key={bank.id} className="bg-gray-50 rounded-xl p-6 space-y-4">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-semibold text-gray-900">Bank {bankIdx + 1}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900">Bank {bankIdx + 1}</h3>
+                      <span className={cn(
+                        "text-xs font-medium px-2 py-0.5 rounded-full",
+                        bankIdx === 0 ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-600"
+                      )}>
+                        {bankIdx === 0 ? 'Primary' : 'Secondary'}
+                      </span>
+                    </div>
                     {bankIdx > 0 && (
                       <Button
                         variant="ghost"
@@ -1867,6 +1888,24 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
                       )}
                     </div>
                     <div>
+                      <Label className="text-gray-700">Loan Amount</Label>
+                      <div className="relative mt-2">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                        <Input
+                          placeholder="0.00"
+                          className={cn("h-11 bg-white border-gray-200 pl-7", fieldErrors.bank1LoanAmount && "border-red-500 focus-visible:ring-red-500")}
+                          value={bank.loanAmount}
+                          onChange={(e) => updateBank(bank.id, 'loanAmount', e.target.value)}
+                        />
+                      </div>
+                      {fieldErrors.bank1LoanAmount && (
+                        <p className="text-sm text-red-500 mt-1">{fieldErrors.bank1LoanAmount}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
                       <Label className="text-gray-700 flex items-center gap-1">
                         Loan Allocation %
                         <TooltipProvider>
@@ -1876,7 +1915,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
                             </TooltipTrigger>
                             <TooltipContent className="max-w-xs p-4">
                               <p className="font-semibold mb-2">Loan Allocation %</p>
-                              <p className="text-sm">If you use the full loan amount (100%) to buy a property, the Loan Allocation is 100%.</p>
+                              <p className="text-sm">The share of this loan&apos;s balance and interest that should be attributed to this property. Use 100% if the loan was drawn entirely for this property; a lower % if the same loan facility is split across multiple properties.</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>

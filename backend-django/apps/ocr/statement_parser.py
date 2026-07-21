@@ -166,6 +166,61 @@ def _property_for_y_generic(headers, y):
 # table — none of the other detectors recognise this table shape at all, so
 # statements using it lose their rent income entirely.
 
+_EOFY_ALL_PROPERTIES_RE = re.compile(r'Total\s+for\s+all\s+properties', re.IGNORECASE)
+# Labels used under a "Total For All Properties" heading — the summary card
+# just says "Income" / "Expenses" (not spelled out as "Total ...").
+_EOFY_INCOME_RE = re.compile(r'\bIncome\b[\s\S]{0,20}?\$?\s*([\d,]+\.\d{2})', re.IGNORECASE)
+_EOFY_EXPENSE_RE = re.compile(r'\bExpenses?\b[\s\S]{0,20}?\$?\s*([\d,]+\.\d{2})', re.IGNORECASE)
+
+
+def _has_eofy_summary_format(text):
+    """
+    End-of-financial-year statements are reconciliation summaries, not
+    transaction ledgers — the individual transactions were already entered
+    from statements received throughout the year, so re-extracting every
+    line item here would double-count them. All that's needed is the two
+    portfolio totals, for the user to check against what they've already
+    recorded.
+
+    Gated strictly on the "Total For All Properties" portfolio-summary
+    heading rather than on bare "Total income"/"Total expenses" labels —
+    plenty of ordinary single-period statements also print their own
+    period totals under those exact labels, and matching on that alone
+    hijacked real per-transaction extraction on regular statements (see
+    fixture regression: "Statement sample 9/11.pdf").
+    """
+    return bool(text) and bool(_EOFY_ALL_PROPERTIES_RE.search(text))
+
+
+def _extract_eofy_summary_format(text, property_addr, statement_period):
+    anchor_m = _EOFY_ALL_PROPERTIES_RE.search(text)
+    search_text = text[anchor_m.end():anchor_m.end() + 400] if anchor_m else text
+    income_m = _EOFY_INCOME_RE.search(search_text)
+    expense_m = _EOFY_EXPENSE_RE.search(search_text)
+
+    date_m = re.search(r'(\d{1,2}\s+\w+\s+\d{4})\s*$', statement_period.strip()) if statement_period else None
+    date = date_m.group(1) if date_m else ""
+
+    transactions = []
+    if income_m:
+        transactions.append({
+            "date": date,
+            "description": "EOFY Statement — Total Income (reconciliation)",
+            "amount_in": _parse_amount(income_m.group(1)),
+            "amount_out": "",
+            "property_address": property_addr,
+        })
+    if expense_m:
+        transactions.append({
+            "date": date,
+            "description": "EOFY Statement — Total Expense (reconciliation)",
+            "amount_in": "",
+            "amount_out": _parse_amount(expense_m.group(1)),
+            "property_address": property_addr,
+        })
+    return transactions
+
+
 def _has_rent_income_summary_format(words):
     for w in sorted(words, key=lambda x: x['top']):
         if w['text'] == 'RENT':
@@ -1101,7 +1156,9 @@ def extract_transactions_pdf(pdf_file, address_filter=None):
         statement_period, property_addr = extract_statement_meta(full_text)
 
         first_page_words = pdf.pages[0].extract_words(keep_blank_chars=False) if pdf.pages else []
-        if _has_details_for_format(first_page_words):
+        if _has_eofy_summary_format(full_text):
+            transactions = _extract_eofy_summary_format(full_text, property_addr, statement_period)
+        elif _has_details_for_format(first_page_words):
             all_words = _combine_format_c_pages(pdf)
             transactions = _extract_details_for_format(all_words)
         elif _has_rent_income_summary_format(first_page_words):

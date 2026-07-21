@@ -113,6 +113,31 @@ export async function getTransactionsByProperty(propertyId: string): Promise<Tra
   return [];
 }
 
+// Fetches every transaction in a date range (across all properties) for report
+// generation. Uses a high limit since reports need the full period, not a page.
+export async function getTransactionsInRange(range: { startDate?: string; endDate?: string }): Promise<Transaction[]> {
+  const response = await transactionsApi.getAll({ ...range, limit: 5000 });
+  if (response.success && response.data) {
+    const data = response.data as { transactions: Array<Record<string, unknown>> };
+    return (data.transactions || []).map(t => {
+      const categoryName = t.category_name as string || '';
+      return {
+        id: t.id as string,
+        propertyId: t.property_id as string,
+        propertyName: t.property_name as string,
+        category: categoryName,
+        categoryLabel: t.category_display_name as string || categoryLabelsMap[categoryName]?.label || categoryName,
+        type: t.type as 'income' | 'expense' | 'cost',
+        amount: parseFloat(t.amount as string),
+        date: t.date as string,
+        description: t.description as string,
+        createdAt: t.created_at as string,
+      };
+    });
+  }
+  return [];
+}
+
 export async function addTransaction(data: {
   propertyId: string;
   propertyName?: string;

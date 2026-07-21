@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Building2, Search, Plus, Pencil, Trash2, Loader2, AlertTriangle, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { MultiStepPropertyForm } from "@/app/dashboard/_components/property/MultiStepPropertyForm";
-import { removeProperty, type Property } from "@/lib/property";
+import { removeProperty, getLoanSummary, getBankLabel, type Property } from "@/lib/property";
 import { usePropertiesSWR } from "@/hooks/usePropertiesSWR";
 import { PropertyListSkeleton } from "@/components/ui/skeletons";
 
@@ -269,7 +269,9 @@ const Property = () => {
           </Card>
         ) : (
           <div className="space-y-4">
-            {filteredProperties.map((property) => (
+            {filteredProperties.map((property) => {
+              const loanSummary = getLoanSummary(property);
+              return (
               <Card
                 key={property.id}
                 className="cursor-pointer hover:shadow-md transition-shadow"
@@ -320,11 +322,11 @@ const Property = () => {
                     </div>
                     <div>
                       <div className="text-sm text-muted-foreground mb-1">Loan</div>
-                      <div className="font-semibold">$0</div>
+                      <div className="font-semibold">${loanSummary.totalLoan.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</div>
                     </div>
                     <div>
                       <div className="text-sm text-muted-foreground mb-1">LVR</div>
-                      <div className="font-semibold">0%</div>
+                      <div className="font-semibold">{loanSummary.lvr.toFixed(0)}%</div>
                     </div>
                     <div>
                       <div className="text-sm text-muted-foreground mb-1">Ownership</div>
@@ -356,8 +358,20 @@ const Property = () => {
                   <div className="border-t border-border pt-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        {/* Loans section placeholder */}
-                        <div className="text-sm font-medium text-primary mb-2">Active Loans (0)</div>
+                        <div className="text-sm font-medium text-primary mb-2">
+                          {loanSummary.banks.length === 0
+                            ? 'No loans added'
+                            : `Loans (${loanSummary.banks.length})`}
+                        </div>
+                        {loanSummary.banks.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {loanSummary.banks.map((bank, idx) => (
+                              <Badge key={bank.id || idx} variant="secondary" className="font-normal">
+                                {getBankLabel(bank.bankName)} {idx === 0 ? '(Primary)' : '(Secondary)'}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={(e) => handleEditProperty(property, e)}>
@@ -369,7 +383,8 @@ const Property = () => {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

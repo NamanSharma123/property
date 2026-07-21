@@ -4,7 +4,10 @@ import React, { useState, useEffect } from "react";
 import GenerateReports from "./generatereports";
 import TaxSupporting from "./taxsupporting";
 import DownloadDocuments from "./downloaddocuments";
+import ReportOutput from "./ReportOutput";
+import LoanSummaryOutput from "./LoanSummaryOutput";
 import { getProperties, type Property } from "@/lib/property";
+import type { ReportData } from "@/lib/reports";
 
 
 export default function ReportsContent() {
@@ -15,6 +18,8 @@ export default function ReportsContent() {
   const [year, setYear] = useState<string>("FY 24-25");
   const [selectedDate, setSelectedDate] = useState<string>("18-11-2025");
   const [properties, setProperties] = useState<Property[]>([]);
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [showLoanSummary, setShowLoanSummary] = useState(false);
 
   // Fetch properties on mount
   useEffect(() => {
@@ -54,8 +59,16 @@ export default function ReportsContent() {
             reportTypeTabs={reportTypeTabs}
             years={years}
             properties={properties}
+            onReportGenerated={setReportData}
+            onGenerateLoanSummary={() => setShowLoanSummary(true)}
           />
 
+          {reportData && (
+            <ReportOutput report={reportData} onClose={() => setReportData(null)} />
+          )}
+          {showLoanSummary && (
+            <LoanSummaryOutput properties={properties} onClose={() => setShowLoanSummary(false)} />
+          )}
         </div>
 
         {/* Right column: download cards */}

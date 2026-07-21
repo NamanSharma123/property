@@ -255,3 +255,68 @@ export async function resetProperties(): Promise<{ success: boolean }> {
   // No-op for API-based implementation
   return { success: true };
 }
+
+export interface LoanBankDetail {
+  id?: string;
+  bankName?: string;
+  loanAmount?: number | string;
+  loanAllocationPercent?: string;
+  document?: { name: string; size: number; url?: string } | null;
+}
+
+export const BANK_LABELS: Record<string, string> = {
+  'commonwealth': 'CBA',
+  'westpac': 'WBC',
+  'anz': 'ANZ',
+  'nab': 'NAB',
+  'macquarie': 'MAC',
+  'ing': 'ING',
+  'other': 'OTH',
+};
+
+export function getBankLabel(bankName?: string): string {
+  if (!bankName) return '';
+  return BANK_LABELS[bankName] || bankName.toUpperCase().substring(0, 3);
+}
+
+export interface LoanSummary {
+  /** Sum of loanAmount * (loanAllocationPercent / 100) across every bank on the property. */
+  totalLoan: number;
+  netEquity: number;
+  lvr: number;
+  banks: LoanBankDetail[];
+  primaryBank: LoanBankDetail | null;
+}
+
+/**
+ * Loan Allocation % is the share of a given loan's balance attributed to this
+ * property (relevant when one loan facility funds multiple properties) — not
+ * a share of the property's market value. The first bank entry is the primary
+ * loan, any others are secondary.
+ */
+export function getLoanSummary(property: { current_value?: number; marketValue?: number | string; loan_details?: unknown; loanDetails?: unknown }): LoanSummary {
+  const marketValue = Number(property.current_value ?? property.marketValue ?? 0) || 0;
+  let banks: LoanBankDetail[] = [];
+
+  try {
+    const raw = property.loan_details ?? property.loanDetails;
+    const loanData = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+    if (Array.isArray(loanData)) {
+      banks = loanData.filter((b: LoanBankDetail) => b && b.bankName && b.bankName.trim() !== '');
+    } else if (loanData && typeof loanData === 'object' && (loanData as LoanBankDetail).bankName) {
+      banks = [loanData as LoanBankDetail];
+    }
+  } catch { /* ignore malformed loan_details */ }
+
+  const totalLoan = banks.reduce((sum, b) => {
+    const amount = Number(b.loanAmount) || 0;
+    const allocation = b.loanAllocationPercent ? parseFloat(b.loanAllocationPercent) : 100;
+    return sum + amount * (allocation / 100);
+  }, 0);
+
+  const netEquity = marketValue - totalLoan;
+  const lvr = marketValue > 0 ? (totalLoan / marketValue) * 100 : 0;
+
+  return { totalLoan, netEquity, lvr, banks, primaryBank: banks[0] || null };
+}
