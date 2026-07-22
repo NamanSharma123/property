@@ -170,16 +170,18 @@ export function extractLineItemsForTransactions(
                 const normalized = name.toLowerCase().trim();
                 const words = normalized.split(/[\s,]+/);
 
-                // Extract ALL leading unit/street numbers, e.g. "9a", "2a/35" —
-                // and for a duplex property entered as "9a 9b sicilian ave",
-                // BOTH "9a" and "9b" (a statement covering either unit should
-                // match this single combined property).
+                // Extract ALL leading unit/street numbers, e.g. "9a", "2a/35",
+                // "2-35" (hyphen is used interchangeably with "/" for unit/street-
+                // no by some agencies — normalized to "/" below so "2-35" and
+                // "2/35" compare equal) — and for a duplex property entered as
+                // "9a 9b sicilian ave", BOTH "9a" and "9b" (a statement covering
+                // either unit should match this single combined property).
                 const numbers: string[] = [];
                 let i = 0;
                 while (i < words.length) {
-                    const m = words[i].match(/^(\d+[a-z]?(?:\/\d+[a-z]?)?)$/);
+                    const m = words[i].match(/^(\d+[a-z]?(?:[/-]\d+[a-z]?)?)$/);
                     if (!m) break;
-                    numbers.push(m[1]);
+                    numbers.push(m[1].replace(/-/g, '/'));
                     i++;
                 }
 

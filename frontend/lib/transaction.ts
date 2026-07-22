@@ -178,16 +178,22 @@ export async function addMultipleTransactions(items: Array<{
   amount: number;
   date: string;
   transactionSource?: string;
+  description?: string;
   receiptUrl?: string;
-}>): Promise<{ success: boolean; error?: string; count?: number }> {
+}>): Promise<{ success: boolean; error?: string; count?: number; failures?: string[] }> {
   let count = 0;
+  const failures: string[] = [];
 
   for (const item of items) {
     const result = await addTransaction(item);
-    if (result.success) count++;
+    if (result.success) {
+      count++;
+    } else {
+      failures.push(result.error || 'Failed to create transaction');
+    }
   }
 
-  return { success: true, count };
+  return { success: failures.length === 0, count, failures: failures.length ? failures : undefined };
 }
 
 export async function removeTransaction(transactionId: string): Promise<{ success: boolean; error?: string }> {

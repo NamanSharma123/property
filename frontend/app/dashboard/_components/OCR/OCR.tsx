@@ -21,6 +21,13 @@ interface DetailRow {
   id: string;
   category: string;
   amount: string;
+  // The extracted line item's own description (e.g. "Rent payment 15/07/2024
+  // to 21/07/2024"), distinct per row even when category+amount repeat
+  // across several weekly rent payments. Carried through to save so the
+  // backend's duplicate-transaction check (same property+date+type+amount+
+  // description+category) doesn't collapse genuinely separate transactions
+  // into "duplicates" of each other.
+  description?: string;
 }
 
 interface OCRPageProps {
@@ -242,6 +249,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
           id: Date.now().toString() + Math.random().toString().slice(2),
           category: t.category,
           amount: t.amount.toString(),
+          description: t.description,
         }));
         setDetails(newDetails);
         toast.success('OCR Complete', { description: `Extracted ${transactions.length} items` });
@@ -326,6 +334,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
             id: Date.now().toString() + Math.random().toString().slice(2),
             category: t.category,
             amount: t.amount.toString(),
+            description: t.description,
           }));
           setDetails(newDetails);
           toast.success('Filtered by property', { description: `Showing ${transactions.length} items for ${selectedPropertyName}` });
@@ -425,6 +434,10 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         amount: parseFloat(detail.amount) || 0,
         date: statementDateStr,
         transactionSource: 'OCR Upload' as const,
+        // Distinguishes otherwise-identical rows (e.g. several weekly rent
+        // payments of the same amount) so the backend's duplicate-transaction
+        // check doesn't reject legitimate separate transactions as repeats.
+        ...(detail.description ? { description: detail.description } : {}),
         statementDate: statementDateStr,
         startDate: startDateStr,
         endDate: endDateStr,
@@ -433,7 +446,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
 
       const result = await addMultipleTransactions(transactionItems);
 
-      if (result.success) {
+      if ((result.count || 0) > 0) {
         // Reset form
         setSelectedFile(null);
         setPreviewUrl(null);
@@ -444,9 +457,19 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         setStartDate(() => { const d = new Date(); d.setDate(1); return d; });
         setEndDate(new Date());
 
-        toast.success('Transactions Saved', {
-          description: `Successfully saved ${result.count} transaction(s)!`,
-        });
+        if (result.success) {
+          toast.success('Transactions Saved', {
+            description: `Successfully saved ${result.count} transaction(s)!`,
+          });
+        } else {
+          // Some rows saved, others were rejected (e.g. as duplicates of an
+          // already-saved transaction) — still navigate, but be explicit
+          // about the partial result instead of claiming full success.
+          toast.warning('Some transactions were not saved', {
+            description: `Saved ${result.count} of ${transactionItems.length}. ${result.failures?.[0] || ''}`,
+            duration: 10000,
+          });
+        }
 
         // Navigate to transactions page with property filter
         const propertyName = property.name;
@@ -460,7 +483,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
           router.push('/dashboard/transactions');
         }
       } else {
-        setError(result.error || 'Failed to save transactions');
+        setError(result.failures?.[0] || result.error || 'Failed to save transactions');
       }
     } catch (err) {
       console.error('Error saving transactions:', err);
