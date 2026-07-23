@@ -15,6 +15,9 @@ import {
 import { MultiSelect } from '@/components/ui/multi-select';
 import { propertiesApi, transactionsApi, documentsApi } from '@/lib/api';
 import { getLoanSummary, getBankLabel } from '@/lib/property';
+import { getTransactionsInRange } from '@/lib/transaction';
+import { buildIndividualPropertyReport, getRecentFinancialYearLabels, getFinancialYearRange, type ReportData } from '@/lib/reports';
+import ReportOutput from '@/app/dashboard/_components/reports/ReportOutput';
 
 interface LoanDocument {
     name: string;
@@ -131,6 +134,8 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('transaction');
+    const [reportData, setReportData] = useState<ReportData | null>(null);
+    const [isLoadingReport, setIsLoadingReport] = useState(false);
 
     const openDocument = async (storedUrl: string) => {
         const result = await documentsApi.getViewUrl(storedUrl);
@@ -201,6 +206,32 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
             fetchData();
         }
     }, [propertyId]);
+
+    // Individual Property Report — one column per financial year (current +
+    // 2 prior), fetched fresh scoped to this property rather than reusing
+    // the `transactions` state above (that's capped at 100 rows for the
+    // dashboard summary cards, not enough for a 3-year report).
+    useEffect(() => {
+        if (activeTab !== 'report' || !property || reportData) return;
+
+        const loadReport = async () => {
+            setIsLoadingReport(true);
+            try {
+                const yearLabels = getRecentFinancialYearLabels(3);
+                const ranges = yearLabels.map(getFinancialYearRange);
+                const startDate = ranges.reduce((min, r) => (r.startDate < min ? r.startDate : min), ranges[0].startDate);
+                const endDate = ranges.reduce((max, r) => (r.endDate > max ? r.endDate : max), ranges[0].endDate);
+                const reportTransactions = await getTransactionsInRange({ propertyId, startDate, endDate });
+                setReportData(buildIndividualPropertyReport(property, reportTransactions, yearLabels));
+            } catch (error) {
+                console.error('Failed to build property report:', error);
+            } finally {
+                setIsLoadingReport(false);
+            }
+        };
+
+        loadReport();
+    }, [activeTab, property, propertyId, reportData]);
 
     const handleResetFilters = () => {
         setFilters({
@@ -1105,9 +1136,22 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                     )
                 }
 
+                {/* Report tab — Individual Property Report, shown directly (no Generate click) */}
+                {
+                    activeTab === 'report' && (
+                        isLoadingReport || !reportData ? (
+                            <div className="mt-6 bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
+                                Loading report…
+                            </div>
+                        ) : (
+                            <ReportOutput report={reportData} />
+                        )
+                    )
+                }
+
                 {/* Other tabs placeholder */}
                 {
-                    activeTab !== 'transaction' && activeTab !== 'ownership' && activeTab !== 'document' && activeTab !== 'loan' && (
+                    activeTab !== 'transaction' && activeTab !== 'ownership' && activeTab !== 'document' && activeTab !== 'loan' && activeTab !== 'report' && (
                         <div className="mt-6 bg-white rounded-xl border border-gray-200 p-8 text-center">
                             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <FileText className="w-8 h-8 text-gray-400" />

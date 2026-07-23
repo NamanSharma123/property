@@ -555,6 +555,8 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         { value: 'rental-income', label: 'Rental Income' },
         { value: 'other-rental-income', label: 'Other rental related income' },
         { value: 'variable-outgoings-received', label: 'Variable Outgoings Received' },
+        { value: 'insurance-recoveries', label: 'Insurance Recoveries' },
+        { value: 'booking-short-stay-income', label: 'Booking / Short Stay Income' },
       ]
     },
     {

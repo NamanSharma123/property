@@ -4,7 +4,15 @@ import React, { useState } from "react";
 
 import { Property } from "@/lib/property";
 import { getTransactionsInRange } from "@/lib/transaction";
-import { buildIncomeExpenditureReport, buildCostBaseReport, getFinancialYearRange, type ReportData, type CostBaseReport } from "@/lib/reports";
+import {
+  buildAllPropertiesReport,
+  buildIndividualPropertyReport,
+  buildCostBaseReport,
+  getFinancialYearRange,
+  getRecentFinancialYearLabels,
+  type ReportData,
+  type CostBaseReport,
+} from "@/lib/reports";
 
 interface GenerateReportsProps {
   reportType: string;
@@ -75,15 +83,28 @@ export default function GenerateReports({
       alert("Monthly reports aren't available yet — showing the current Financial Year instead.");
     }
 
-    const selectedProperties = property === "all" ? properties : properties.filter(p => p.id === property);
-    const { startDate, endDate } = getFinancialYearRange(year);
-
     setIsGenerating(true);
     onReportGenerated(null);
     try {
-      const transactions = await getTransactionsInRange({ startDate, endDate });
-      const report = buildIncomeExpenditureReport(selectedProperties, transactions, startDate, endDate);
-      onReportGenerated(report);
+      if (property === "all") {
+        // All Properties Report: one column per property, all for the selected year.
+        const { startDate, endDate } = getFinancialYearRange(year);
+        const transactions = await getTransactionsInRange({ startDate, endDate });
+        onReportGenerated(buildAllPropertiesReport(properties, transactions, year));
+      } else {
+        // Individual Property Report: one column per year (current + 2 prior), for that property.
+        const selectedProp = properties.find(p => p.id === property);
+        if (!selectedProp) {
+          alert("Selected property not found.");
+          return;
+        }
+        const yearLabels = getRecentFinancialYearLabels(3, year);
+        const ranges = yearLabels.map(getFinancialYearRange);
+        const startDate = ranges.reduce((min, r) => (r.startDate < min ? r.startDate : min), ranges[0].startDate);
+        const endDate = ranges.reduce((max, r) => (r.endDate > max ? r.endDate : max), ranges[0].endDate);
+        const transactions = await getTransactionsInRange({ propertyId: property, startDate, endDate });
+        onReportGenerated(buildIndividualPropertyReport(selectedProp, transactions, yearLabels));
+      }
     } catch {
       alert("Failed to generate report. Please try again.");
     } finally {

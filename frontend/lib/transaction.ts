@@ -27,6 +27,8 @@ export const categoryLabelsMap: Record<string, { label: string; type: 'income' |
   'rental-income': { label: 'Rental Income', type: 'income' },
   'other-rental-income': { label: 'Other rental related income', type: 'income' },
   'variable-outgoings-received': { label: 'Variable Outgoings Received', type: 'income' },
+  'insurance-recoveries': { label: 'Insurance Recoveries', type: 'income' },
+  'booking-short-stay-income': { label: 'Booking / Short Stay Income', type: 'income' },
 
   // ============ EXPENSE CATEGORIES ============
   'council-rates': { label: 'Council rates', type: 'expense' },
@@ -115,7 +117,7 @@ export async function getTransactionsByProperty(propertyId: string): Promise<Tra
 
 // Fetches every transaction in a date range (across all properties) for report
 // generation. Uses a high limit since reports need the full period, not a page.
-export async function getTransactionsInRange(range: { startDate?: string; endDate?: string }): Promise<Transaction[]> {
+export async function getTransactionsInRange(range: { startDate?: string; endDate?: string; propertyId?: string }): Promise<Transaction[]> {
   const response = await transactionsApi.getAll({ ...range, limit: 5000 });
   if (response.success && response.data) {
     const data = response.data as { transactions: Array<Record<string, unknown>> };

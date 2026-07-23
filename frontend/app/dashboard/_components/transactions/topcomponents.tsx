@@ -20,6 +20,8 @@ const CATEGORY_OPTIONS: MultiSelectOption[] = [
   { value: "rental-income", label: "Rental Income", group: "income" },
   { value: "other-rental-income", label: "Other rental related income", group: "income" },
   { value: "variable-outgoings-received", label: "Variable Outgoings Received", group: "income" },
+  { value: "insurance-recoveries", label: "Insurance Recoveries", group: "income" },
+  { value: "booking-short-stay-income", label: "Booking / Short Stay Income", group: "income" },
 
   // Expense categories
   { value: "council-rates", label: "Council rates", group: "expense" },
