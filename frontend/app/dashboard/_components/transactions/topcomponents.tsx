@@ -1,9 +1,9 @@
 'use client';
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CalendarIcon } from "lucide-react";
-import { getProperties } from "@/lib/property";
+import { usePropertiesSWR } from "@/hooks/usePropertiesSWR";
 import { MultiSelect, MultiSelectOption } from "@/components/ui/multi-select";
 
 // Transaction source options (static)
@@ -79,9 +79,18 @@ export const TopComponents = ({
 
   // Property list for the filter — from the user's actual properties, not
   // just ones that happen to already have a transaction (a property with
-  // zero transactions still needs to be selectable/filterable).
-  const [propertyOptions, setPropertyOptions] = useState<MultiSelectOption[]>([]);
-  const [isLoadingProperties, setIsLoadingProperties] = useState(false);
+  // zero transactions still needs to be selectable/filterable). Uses the
+  // same shared SWR hook as the rest of the app (auto-retries and shares
+  // its cache with the Property page) instead of a one-shot fetch, which
+  // previously failed permanently and silently if it lost a race with
+  // auth initialization on first page load.
+  const { properties, isLoading: isLoadingProperties } = usePropertiesSWR();
+  const propertyOptions: MultiSelectOption[] = useMemo(() =>
+    Array.from(new Set(properties.map(p => p.name).filter((name): name is string => Boolean(name?.trim()))))
+      .sort()
+      .map(name => ({ value: name, label: name })),
+    [properties]
+  );
 
   // Date validation error state
   const [dateError, setDateError] = useState<string | null>(null);
@@ -103,51 +112,6 @@ export const TopComponents = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run on mount - intentionally excluding 'property' to avoid re-triggering
-
-  // Load the user's full property list (not derived from transactions —
-  // properties with zero transactions still need to be filterable).
-  const loadPropertyOptions = useCallback(async (signal?: AbortSignal) => {
-    setIsLoadingProperties(true);
-    try {
-      const properties = await getProperties();
-
-      // Check if aborted before setting state
-      if (signal?.aborted) return;
-
-      const uniqueNames = Array.from(
-        new Set(properties.map(p => p.name).filter((name): name is string => Boolean(name?.trim())))
-      ).sort();
-
-      setPropertyOptions(
-        uniqueNames.map(name => ({ value: name, label: name }))
-      );
-    } catch (error) {
-      if (signal?.aborted) return;
-      console.error('Failed to load property options:', error);
-    } finally {
-      if (!signal?.aborted) {
-        setIsLoadingProperties(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const abortController = new AbortController();
-    loadPropertyOptions(abortController.signal);
-
-    // Reload when window becomes visible
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadPropertyOptions(abortController.signal);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      abortController.abort();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [loadPropertyOptions]);
 
   const handleReset = () => {
     setFromDate("");
