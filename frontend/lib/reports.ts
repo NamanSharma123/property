@@ -49,6 +49,25 @@ function getPropertyAddress(property: ReportProperty): string {
   return String(property.address || '');
 }
 
+export interface ReportPeriod {
+  /** Column header for this period, e.g. "FY 25-26" or "01/01/2026 - 30/06/2026". */
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
+export function financialYearPeriod(yearLabel: string): ReportPeriod {
+  return { label: yearLabel, ...getFinancialYearRange(yearLabel) };
+}
+
+export function customDatePeriod(startDate: string, endDate: string): ReportPeriod {
+  const fmt = (d: string) => {
+    const [y, m, day] = d.split('-');
+    return y && m && day ? `${day}/${m}/${y}` : d;
+  };
+  return { label: `${fmt(startDate)} - ${fmt(endDate)}`, startDate, endDate };
+}
+
 export interface ReportColumn {
   key: string;
   propertyId: string;
@@ -131,43 +150,39 @@ function buildReportFromColumns(
   return { mode, columns, incomeRows, expenseRows, grossRentByColumn, totalExpenseByColumn, netByColumn };
 }
 
-/** All Properties Report: one column per property, all for the same financial year. */
+/** All Properties Report: one column per property, all for the same period (a financial year or a custom date range). */
 export function buildAllPropertiesReport(
   properties: ReportProperty[],
   transactions: Transaction[],
-  yearLabel: string
+  period: ReportPeriod
 ): ReportData {
-  const { startDate, endDate } = getFinancialYearRange(yearLabel);
   const columns: ReportColumn[] = properties.map(p => ({
     key: p.id,
     propertyId: p.id,
     propertyName: p.name,
     propertyAddress: getPropertyAddress(p),
-    yearLabel,
-    startDate,
-    endDate,
+    yearLabel: period.label,
+    startDate: period.startDate,
+    endDate: period.endDate,
   }));
   return buildReportFromColumns(columns, transactions, 'all-properties');
 }
 
-/** Individual Property Report: one column per financial year, for a single property. */
+/** Individual Property Report: one column per period (financial years, or a single custom date range), for a single property. */
 export function buildIndividualPropertyReport(
   property: ReportProperty,
   transactions: Transaction[],
-  yearLabels: string[]
+  periods: ReportPeriod[]
 ): ReportData {
-  const columns: ReportColumn[] = yearLabels.map(yearLabel => {
-    const { startDate, endDate } = getFinancialYearRange(yearLabel);
-    return {
-      key: yearLabel,
-      propertyId: property.id,
-      propertyName: property.name,
-      propertyAddress: getPropertyAddress(property),
-      yearLabel,
-      startDate,
-      endDate,
-    };
-  });
+  const columns: ReportColumn[] = periods.map((period, i) => ({
+    key: `${period.label}-${i}`,
+    propertyId: property.id,
+    propertyName: property.name,
+    propertyAddress: getPropertyAddress(property),
+    yearLabel: period.label,
+    startDate: period.startDate,
+    endDate: period.endDate,
+  }));
   return buildReportFromColumns(columns, transactions, 'individual-property');
 }
 

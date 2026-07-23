@@ -16,7 +16,7 @@ import { MultiSelect } from '@/components/ui/multi-select';
 import { propertiesApi, transactionsApi, documentsApi } from '@/lib/api';
 import { getLoanSummary, getBankLabel } from '@/lib/property';
 import { getTransactionsInRange } from '@/lib/transaction';
-import { buildIndividualPropertyReport, getRecentFinancialYearLabels, getFinancialYearRange, type ReportData } from '@/lib/reports';
+import { buildIndividualPropertyReport, getRecentFinancialYearLabels, financialYearPeriod, type ReportData } from '@/lib/reports';
 import ReportOutput from '@/app/dashboard/_components/reports/ReportOutput';
 
 interface LoanDocument {
@@ -217,12 +217,11 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
         const loadReport = async () => {
             setIsLoadingReport(true);
             try {
-                const yearLabels = getRecentFinancialYearLabels(3);
-                const ranges = yearLabels.map(getFinancialYearRange);
-                const startDate = ranges.reduce((min, r) => (r.startDate < min ? r.startDate : min), ranges[0].startDate);
-                const endDate = ranges.reduce((max, r) => (r.endDate > max ? r.endDate : max), ranges[0].endDate);
+                const periods = getRecentFinancialYearLabels(3).map(financialYearPeriod);
+                const startDate = periods.reduce((min, p) => (p.startDate < min ? p.startDate : min), periods[0].startDate);
+                const endDate = periods.reduce((max, p) => (p.endDate > max ? p.endDate : max), periods[0].endDate);
                 const reportTransactions = await getTransactionsInRange({ propertyId, startDate, endDate });
-                setReportData(buildIndividualPropertyReport(property, reportTransactions, yearLabels));
+                setReportData(buildIndividualPropertyReport(property, reportTransactions, periods));
             } catch (error) {
                 console.error('Failed to build property report:', error);
             } finally {

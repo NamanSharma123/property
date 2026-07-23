@@ -19,6 +19,8 @@ export default function ReportsContent() {
   const [year, setYear] = useState<string>("FY 24-25");
   // ISO format (YYYY-MM-DD) — required by the native <input type="date"> below.
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [customFromDate, setCustomFromDate] = useState<string>("");
+  const [customToDate, setCustomToDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [properties, setProperties] = useState<Property[]>([]);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [showLoanSummary, setShowLoanSummary] = useState(false);
@@ -59,6 +61,10 @@ export default function ReportsContent() {
             setYear={setYear}
             selectedDate={selectedDate}
             setSelectedDate={setSelectedDate}
+            customFromDate={customFromDate}
+            setCustomFromDate={setCustomFromDate}
+            customToDate={customToDate}
+            setCustomToDate={setCustomToDate}
             reportTypeTabs={reportTypeTabs}
             years={years}
             properties={properties}

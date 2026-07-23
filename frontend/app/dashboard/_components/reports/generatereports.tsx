@@ -8,10 +8,12 @@ import {
   buildAllPropertiesReport,
   buildIndividualPropertyReport,
   buildCostBaseReport,
-  getFinancialYearRange,
+  financialYearPeriod,
+  customDatePeriod,
   getRecentFinancialYearLabels,
   type ReportData,
   type CostBaseReport,
+  type ReportPeriod,
 } from "@/lib/reports";
 
 interface GenerateReportsProps {
@@ -27,6 +29,10 @@ interface GenerateReportsProps {
   setYear: (year: string) => void;
   selectedDate: string;
   setSelectedDate: (date: string) => void;
+  customFromDate: string;
+  setCustomFromDate: (date: string) => void;
+  customToDate: string;
+  setCustomToDate: (date: string) => void;
   reportTypeTabs: { id: string; label: string }[];
   years: string[];
   properties: Property[];
@@ -48,6 +54,10 @@ export default function GenerateReports({
   setYear,
   selectedDate,
   setSelectedDate,
+  customFromDate,
+  setCustomFromDate,
+  customToDate,
+  setCustomToDate,
   reportTypeTabs,
   years,
   properties,
@@ -79,31 +89,41 @@ export default function GenerateReports({
       alert(`${reportScope === "ownership" ? "Ownership Wise" : "Unit Wise"} reports aren't available yet — showing the Full Report instead.`);
     }
 
-    if (duration !== "fy") {
-      alert("Monthly reports aren't available yet — showing the current Financial Year instead.");
+    if (duration === "custom") {
+      if (!customFromDate || !customToDate) {
+        alert("Please choose both a From Date and a To Date.");
+        return;
+      }
+      if (customFromDate > customToDate) {
+        alert("From Date must be before To Date.");
+        return;
+      }
     }
 
     setIsGenerating(true);
     onReportGenerated(null);
     try {
       if (property === "all") {
-        // All Properties Report: one column per property, all for the selected year.
-        const { startDate, endDate } = getFinancialYearRange(year);
-        const transactions = await getTransactionsInRange({ startDate, endDate });
-        onReportGenerated(buildAllPropertiesReport(properties, transactions, year));
+        // All Properties Report: one column per property, all for the same period.
+        const period = duration === "custom" ? customDatePeriod(customFromDate, customToDate) : financialYearPeriod(year);
+        const transactions = await getTransactionsInRange(period);
+        onReportGenerated(buildAllPropertiesReport(properties, transactions, period));
       } else {
-        // Individual Property Report: one column per year (current + 2 prior), for that property.
+        // Individual Property Report: one column per period, for that property.
+        // Custom Date collapses to a single column; Financial Year compares
+        // the current + 2 prior years.
         const selectedProp = properties.find(p => p.id === property);
         if (!selectedProp) {
           alert("Selected property not found.");
           return;
         }
-        const yearLabels = getRecentFinancialYearLabels(3, year);
-        const ranges = yearLabels.map(getFinancialYearRange);
-        const startDate = ranges.reduce((min, r) => (r.startDate < min ? r.startDate : min), ranges[0].startDate);
-        const endDate = ranges.reduce((max, r) => (r.endDate > max ? r.endDate : max), ranges[0].endDate);
+        const periods: ReportPeriod[] = duration === "custom"
+          ? [customDatePeriod(customFromDate, customToDate)]
+          : getRecentFinancialYearLabels(3, year).map(financialYearPeriod);
+        const startDate = periods.reduce((min, p) => (p.startDate < min ? p.startDate : min), periods[0].startDate);
+        const endDate = periods.reduce((max, p) => (p.endDate > max ? p.endDate : max), periods[0].endDate);
         const transactions = await getTransactionsInRange({ propertyId: property, startDate, endDate });
-        onReportGenerated(buildIndividualPropertyReport(selectedProp, transactions, yearLabels));
+        onReportGenerated(buildIndividualPropertyReport(selectedProp, transactions, periods));
       }
     } catch {
       alert("Failed to generate report. Please try again.");
@@ -315,25 +335,52 @@ export default function GenerateReports({
                     disabled={!hasProperties}
                   >
                     <option value="fy">Financial Year</option>
-                    <option value="month">Monthly</option>
+                    <option value="custom">Custom Date</option>
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-2">Select Year*</label>
-                  <select
-                    value={year}
-                    onChange={(e) => setYear(e.target.value)}
-                    className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-100"
-                    disabled={!hasProperties}
-                  >
-                    {years.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {duration === "custom" ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-2">From Date*</label>
+                      <input
+                        type="date"
+                        value={customFromDate}
+                        onChange={(e) => setCustomFromDate(e.target.value)}
+                        max={customToDate || undefined}
+                        className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-100"
+                        disabled={!hasProperties}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-2">To Date*</label>
+                      <input
+                        type="date"
+                        value={customToDate}
+                        onChange={(e) => setCustomToDate(e.target.value)}
+                        min={customFromDate || undefined}
+                        className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-100"
+                        disabled={!hasProperties}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-2">Select Year*</label>
+                    <select
+                      value={year}
+                      onChange={(e) => setYear(e.target.value)}
+                      className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-100"
+                      disabled={!hasProperties}
+                    >
+                      {years.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 flex flex-wrap justify-center gap-4">
