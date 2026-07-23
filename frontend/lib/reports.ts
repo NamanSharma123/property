@@ -68,6 +68,22 @@ export function customDatePeriod(startDate: string, endDate: string): ReportPeri
   return { label: `${fmt(startDate)} - ${fmt(endDate)}`, startDate, endDate };
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// monthValue is "YYYY-MM", the native <input type="month"> value format.
+export function monthPeriod(monthValue: string): ReportPeriod {
+  const [yearStr, monthStr] = monthValue.split('-');
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10); // 1-12
+  const lastDay = new Date(year, month, 0).getDate();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    label: `${MONTH_NAMES[month - 1]} ${year}`,
+    startDate: `${yearStr}-${pad(month)}-01`,
+    endDate: `${yearStr}-${pad(month)}-${pad(lastDay)}`,
+  };
+}
+
 export interface ReportColumn {
   key: string;
   propertyId: string;

@@ -10,6 +10,7 @@ import {
   buildCostBaseReport,
   financialYearPeriod,
   customDatePeriod,
+  monthPeriod,
   getRecentFinancialYearLabels,
   type ReportData,
   type CostBaseReport,
@@ -33,6 +34,8 @@ interface GenerateReportsProps {
   setCustomFromDate: (date: string) => void;
   customToDate: string;
   setCustomToDate: (date: string) => void;
+  selectedMonth: string;
+  setSelectedMonth: (month: string) => void;
   reportTypeTabs: { id: string; label: string }[];
   years: string[];
   properties: Property[];
@@ -58,6 +61,8 @@ export default function GenerateReports({
   setCustomFromDate,
   customToDate,
   setCustomToDate,
+  selectedMonth,
+  setSelectedMonth,
   reportTypeTabs,
   years,
   properties,
@@ -100,26 +105,35 @@ export default function GenerateReports({
       }
     }
 
+    if (duration === "month" && !selectedMonth) {
+      alert("Please choose a month.");
+      return;
+    }
+
+    // Financial Year compares the current + 2 prior years (multiple columns
+    // for an Individual Property Report); Monthly and Custom Date are both
+    // single periods, so they collapse to one column.
+    const singlePeriod = duration === "custom" ? customDatePeriod(customFromDate, customToDate)
+      : duration === "month" ? monthPeriod(selectedMonth)
+      : financialYearPeriod(year);
+
     setIsGenerating(true);
     onReportGenerated(null);
     try {
       if (property === "all") {
         // All Properties Report: one column per property, all for the same period.
-        const period = duration === "custom" ? customDatePeriod(customFromDate, customToDate) : financialYearPeriod(year);
-        const transactions = await getTransactionsInRange(period);
-        onReportGenerated(buildAllPropertiesReport(properties, transactions, period));
+        const transactions = await getTransactionsInRange(singlePeriod);
+        onReportGenerated(buildAllPropertiesReport(properties, transactions, singlePeriod));
       } else {
         // Individual Property Report: one column per period, for that property.
-        // Custom Date collapses to a single column; Financial Year compares
-        // the current + 2 prior years.
         const selectedProp = properties.find(p => p.id === property);
         if (!selectedProp) {
           alert("Selected property not found.");
           return;
         }
-        const periods: ReportPeriod[] = duration === "custom"
-          ? [customDatePeriod(customFromDate, customToDate)]
-          : getRecentFinancialYearLabels(3, year).map(financialYearPeriod);
+        const periods: ReportPeriod[] = duration === "fy"
+          ? getRecentFinancialYearLabels(3, year).map(financialYearPeriod)
+          : [singlePeriod];
         const startDate = periods.reduce((min, p) => (p.startDate < min ? p.startDate : min), periods[0].startDate);
         const endDate = periods.reduce((max, p) => (p.endDate > max ? p.endDate : max), periods[0].endDate);
         const transactions = await getTransactionsInRange({ propertyId: property, startDate, endDate });
@@ -335,6 +349,7 @@ export default function GenerateReports({
                     disabled={!hasProperties}
                   >
                     <option value="fy">Financial Year</option>
+                    <option value="month">Monthly</option>
                     <option value="custom">Custom Date</option>
                   </select>
                 </div>
@@ -363,6 +378,18 @@ export default function GenerateReports({
                         disabled={!hasProperties}
                       />
                     </div>
+                  </div>
+                ) : duration === "month" ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-2">Select Month*</label>
+                    <input
+                      type="month"
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      max={new Date().toISOString().slice(0, 7)}
+                      className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-100"
+                      disabled={!hasProperties}
+                    />
                   </div>
                 ) : (
                   <div>

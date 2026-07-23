@@ -21,6 +21,8 @@ export default function ReportsContent() {
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [customFromDate, setCustomFromDate] = useState<string>("");
   const [customToDate, setCustomToDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  // "YYYY-MM" — required by the native <input type="month"> below.
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [properties, setProperties] = useState<Property[]>([]);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [showLoanSummary, setShowLoanSummary] = useState(false);
@@ -65,6 +67,8 @@ export default function ReportsContent() {
             setCustomFromDate={setCustomFromDate}
             customToDate={customToDate}
             setCustomToDate={setCustomToDate}
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
             reportTypeTabs={reportTypeTabs}
             years={years}
             properties={properties}
