@@ -259,9 +259,20 @@ export async function resetProperties(): Promise<{ success: boolean }> {
 export interface LoanBankDetail {
   id?: string;
   bankName?: string;
+  bsbNumber?: string;
+  loanAccountNumber?: string;
   loanAmount?: number | string;
   loanAllocationPercent?: string;
   document?: { name: string; size: number; url?: string } | null;
+  interestType?: string;
+  loanType?: string;
+  productName?: string;
+  startDate?: string;
+  endDate?: string;
+  interestRate?: string;
+  repaymentAmount?: string;
+  redrawAmount?: string;
+  fixedInterestExpiry?: string;
 }
 
 export const BANK_LABELS: Record<string, string> = {

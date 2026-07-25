@@ -65,7 +65,30 @@ interface BankDetails {
   allocateByDateRange: boolean;
   allocations: LoanAllocation[];
   document?: { name: string; size: number; url?: string } | null;
+  // Loan Summary report fields — all optional, since retrofitting these onto
+  // properties saved before they existed shouldn't block editing/saving.
+  interestType: string; // 'fixed' | 'variable'
+  loanType: string; // 'principal-interest' | 'interest-only'
+  productName: string;
+  startDate: string;
+  endDate: string;
+  interestRate: string;
+  repaymentAmount: string;
+  redrawAmount: string;
+  fixedInterestExpiry: string; // only meaningful when interestType === 'fixed'
 }
+
+const EMPTY_LOAN_SUMMARY_FIELDS = {
+  interestType: '',
+  loanType: '',
+  productName: '',
+  startDate: '',
+  endDate: '',
+  interestRate: '',
+  repaymentAmount: '',
+  redrawAmount: '',
+  fixedInterestExpiry: '',
+};
 
 const STATES = [
   { value: 'NSW', label: 'New South Wales' },
@@ -198,6 +221,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
       allocateByDateRange: false,
       allocations: [],
       document: null,
+      ...EMPTY_LOAN_SUMMARY_FIELDS,
     }
   ]);
 
@@ -367,7 +391,13 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
             : loanDetailsStr;
 
           if (Array.isArray(loanData)) {
-            setBanks(loanData.map((loan: { bankName?: string; bsbNumber?: string; bsb?: string; loanAccountNumber?: string; accountNumber?: string; loanAmount?: number | string; loanAllocationPercent?: string; allocateByDateRange?: boolean; allocations?: LoanAllocation[]; document?: { name: string; size: number; url?: string } | null }, idx: number) => ({
+            setBanks(loanData.map((loan: {
+              bankName?: string; bsbNumber?: string; bsb?: string; loanAccountNumber?: string; accountNumber?: string;
+              loanAmount?: number | string; loanAllocationPercent?: string; allocateByDateRange?: boolean;
+              allocations?: LoanAllocation[]; document?: { name: string; size: number; url?: string } | null;
+              interestType?: string; loanType?: string; productName?: string; startDate?: string; endDate?: string;
+              interestRate?: string; repaymentAmount?: string; redrawAmount?: string; fixedInterestExpiry?: string;
+            }, idx: number) => ({
               id: (idx + 1).toString(),
               bankName: loan.bankName || '',
               bsbNumber: loan.bsbNumber || loan.bsb || '',
@@ -377,6 +407,15 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
               allocateByDateRange: loan.allocateByDateRange || false,
               allocations: loan.allocations || [],
               document: loan.document || null,
+              interestType: loan.interestType || '',
+              loanType: loan.loanType || '',
+              productName: loan.productName || '',
+              startDate: loan.startDate || '',
+              endDate: loan.endDate || '',
+              interestRate: loan.interestRate || '',
+              repaymentAmount: loan.repaymentAmount || '',
+              redrawAmount: loan.redrawAmount || '',
+              fixedInterestExpiry: loan.fixedInterestExpiry || '',
             })));
           } else if (loanData.bankName) {
             setBanks([{
@@ -389,6 +428,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
               allocateByDateRange: false,
               allocations: [],
               document: null,
+              ...EMPTY_LOAN_SUMMARY_FIELDS,
             }]);
           }
         } catch (err) {
@@ -860,6 +900,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
       allocateByDateRange: false,
       allocations: [],
       document: null,
+      ...EMPTY_LOAN_SUMMARY_FIELDS,
     }]);
   };
 
@@ -1940,6 +1981,100 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
                       {(fieldErrors.bank1Allocation || fieldErrors.loanAllocation) && (
                         <p className="text-sm text-red-500 mt-1">{fieldErrors.bank1Allocation || fieldErrors.loanAllocation}</p>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Loan Summary report fields — all optional */}
+                  <div className="pt-2">
+                    <p className="text-sm font-medium text-gray-700 mb-3">Loan Summary Details (Optional)</p>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label className="text-gray-700">Loan Type</Label>
+                        <Select value={bank.loanType} onValueChange={(v) => updateBank(bank.id, 'loanType', v)}>
+                          <SelectTrigger className="mt-2 h-11 bg-white border-gray-200">
+                            <SelectValue placeholder="Select loan type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="principal-interest">Principal & Interest</SelectItem>
+                            <SelectItem value="interest-only">Interest Only</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-gray-700">Interest Type</Label>
+                        <Select value={bank.interestType} onValueChange={(v) => updateBank(bank.id, 'interestType', v)}>
+                          <SelectTrigger className="mt-2 h-11 bg-white border-gray-200">
+                            <SelectValue placeholder="Select interest type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="fixed">Fixed</SelectItem>
+                            <SelectItem value="variable">Variable</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-gray-700">Product Name</Label>
+                        <Input
+                          placeholder="e.g. Fixed Rate Home Loan"
+                          className="mt-2 h-11 bg-white border-gray-200"
+                          value={bank.productName}
+                          onChange={(e) => updateBank(bank.id, 'productName', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-gray-700">Interest Rate %</Label>
+                        <Input
+                          placeholder="0.00"
+                          className="mt-2 h-11 bg-white border-gray-200"
+                          value={bank.interestRate}
+                          onChange={(e) => updateBank(bank.id, 'interestRate', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-gray-700">Start Date</Label>
+                        <Input
+                          type="date"
+                          className="mt-2 h-11 bg-white border-gray-200"
+                          value={bank.startDate}
+                          onChange={(e) => updateBank(bank.id, 'startDate', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-gray-700">End Date</Label>
+                        <Input
+                          type="date"
+                          className="mt-2 h-11 bg-white border-gray-200"
+                          value={bank.endDate}
+                          onChange={(e) => updateBank(bank.id, 'endDate', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-gray-700">Repayment $</Label>
+                        <Input
+                          placeholder="0.00"
+                          className="mt-2 h-11 bg-white border-gray-200"
+                          value={bank.repaymentAmount}
+                          onChange={(e) => updateBank(bank.id, 'repaymentAmount', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-gray-700">Redraw $</Label>
+                        <Input
+                          placeholder="0.00"
+                          className="mt-2 h-11 bg-white border-gray-200"
+                          value={bank.redrawAmount}
+                          onChange={(e) => updateBank(bank.id, 'redrawAmount', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-gray-700">Fixed Interest Expiry</Label>
+                        <Input
+                          type="date"
+                          className="mt-2 h-11 bg-white border-gray-200"
+                          value={bank.fixedInterestExpiry}
+                          onChange={(e) => updateBank(bank.id, 'fixedInterestExpiry', e.target.value)}
+                        />
+                      </div>
                     </div>
                   </div>
 
