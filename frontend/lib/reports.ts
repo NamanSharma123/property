@@ -100,6 +100,7 @@ export interface ReportColumn {
   ownershipTypeLabel: string;
   /** e.g. "Addi and Shah (100.00%)" */
   ownerLabel: string;
+  purchasePrice: number;
 }
 
 export interface ReportRow {
@@ -108,36 +109,46 @@ export interface ReportRow {
   amountsByColumn: Record<string, number>;
 }
 
+export type ReportKind = 'income-expenditure' | 'cost-base';
+
 export interface ReportData {
   /** "all-properties": one column per property (same period). "individual-property": one column per year (same property). */
   mode: 'all-properties' | 'individual-property';
+  reportKind: ReportKind;
   columns: ReportColumn[];
+  // Income & Expenditure
   incomeRows: ReportRow[];
   expenseRows: ReportRow[];
   grossRentByColumn: Record<string, number>;
   totalExpenseByColumn: Record<string, number>;
   netByColumn: Record<string, number>;
+  // Cost Base — purchase price is a category-less leading row; the total
+  // folds it in alongside every 'cost'-type category row.
+  costRows: ReportRow[];
+  purchasePriceByColumn: Record<string, number>;
+  totalCostBaseByColumn: Record<string, number>;
 }
 
 /**
- * Simple income & expenditure report — sums transactions by category, per
+ * Sums transactions (or, for Cost Base, purchase price) by category, per
  * column, for that column's period. This is the only aggregation report
  * does: no interest/GST modelling, no allocation logic, just a sum of what
  * was already entered as transactions. Every category row is included
  * (even all-zero ones) so the row list is stable across periods/properties.
- * Expense rows are alphabetical; income rows keep Rental Income first since
- * it's the primary line, then supplementary income types.
+ * Expense/Cost rows are alphabetical; income rows keep Rental Income first
+ * since it's the primary line, then supplementary income types. Income &
+ * Expenditure and Cost Base are otherwise the exact same report, just
+ * filtered to a different category type — see ReportOutput.tsx.
  */
 function buildReportFromColumns(
   columns: ReportColumn[],
   transactions: Transaction[],
-  mode: ReportData['mode']
+  mode: ReportData['mode'],
+  reportKind: ReportKind
 ): ReportData {
-  const buildRows = (type: 'income' | 'expense'): ReportRow[] => {
+  const buildRows = (type: 'income' | 'expense' | 'cost'): ReportRow[] => {
     const categories = Object.entries(categoryLabelsMap).filter(([, info]) => info.type === type);
-    const ordered = type === 'expense'
-      ? [...categories].sort((a, b) => a[1].label.localeCompare(b[1].label))
-      : categories;
+    const ordered = type === 'income' ? categories : [...categories].sort((a, b) => a[1].label.localeCompare(b[1].label));
 
     return ordered.map(([category, info]) => {
       const amountsByColumn: Record<string, number> = {};
@@ -153,12 +164,26 @@ function buildReportFromColumns(
     });
   };
 
-  const incomeRows = buildRows('income');
-  const expenseRows = buildRows('expense');
-
   const sumRows = (rows: ReportRow[], key: string) =>
     rows.reduce((sum, row) => sum + (row.amountsByColumn[key] || 0), 0);
 
+  if (reportKind === 'cost-base') {
+    const costRows = buildRows('cost');
+    const purchasePriceByColumn: Record<string, number> = {};
+    const totalCostBaseByColumn: Record<string, number> = {};
+    for (const col of columns) {
+      purchasePriceByColumn[col.key] = col.purchasePrice;
+      totalCostBaseByColumn[col.key] = col.purchasePrice + sumRows(costRows, col.key);
+    }
+    return {
+      mode, reportKind, columns,
+      incomeRows: [], expenseRows: [], grossRentByColumn: {}, totalExpenseByColumn: {}, netByColumn: {},
+      costRows, purchasePriceByColumn, totalCostBaseByColumn,
+    };
+  }
+
+  const incomeRows = buildRows('income');
+  const expenseRows = buildRows('expense');
   const grossRentByColumn: Record<string, number> = {};
   const totalExpenseByColumn: Record<string, number> = {};
   const netByColumn: Record<string, number> = {};
@@ -171,14 +196,18 @@ function buildReportFromColumns(
     netByColumn[col.key] = income - expense;
   }
 
-  return { mode, columns, incomeRows, expenseRows, grossRentByColumn, totalExpenseByColumn, netByColumn };
+  return {
+    mode, reportKind, columns, incomeRows, expenseRows, grossRentByColumn, totalExpenseByColumn, netByColumn,
+    costRows: [], purchasePriceByColumn: {}, totalCostBaseByColumn: {},
+  };
 }
 
 /** All Properties Report: one column per property, all for the same period (a financial year or a custom date range). */
 export function buildAllPropertiesReport(
   properties: ReportProperty[],
   transactions: Transaction[],
-  period: ReportPeriod
+  period: ReportPeriod,
+  reportKind: ReportKind = 'income-expenditure'
 ): ReportData {
   const columns: ReportColumn[] = properties.map(p => {
     const ownership = getOwnershipInfo(p);
@@ -192,18 +221,21 @@ export function buildAllPropertiesReport(
       endDate: period.endDate,
       ownershipTypeLabel: ownership.typeLabel,
       ownerLabel: ownership.ownerLabel,
+      purchasePrice: Number(p.purchase_price) || 0,
     };
   });
-  return buildReportFromColumns(columns, transactions, 'all-properties');
+  return buildReportFromColumns(columns, transactions, 'all-properties', reportKind);
 }
 
 /** Individual Property Report: one column per period (financial years, or a single custom date range), for a single property. */
 export function buildIndividualPropertyReport(
   property: ReportProperty,
   transactions: Transaction[],
-  periods: ReportPeriod[]
+  periods: ReportPeriod[],
+  reportKind: ReportKind = 'income-expenditure'
 ): ReportData {
   const ownership = getOwnershipInfo(property);
+  const purchasePrice = Number(property.purchase_price) || 0;
   const columns: ReportColumn[] = periods.map((period, i) => ({
     key: `${period.label}-${i}`,
     propertyId: property.id,
@@ -214,8 +246,9 @@ export function buildIndividualPropertyReport(
     endDate: period.endDate,
     ownershipTypeLabel: ownership.typeLabel,
     ownerLabel: ownership.ownerLabel,
+    purchasePrice,
   }));
-  return buildReportFromColumns(columns, transactions, 'individual-property');
+  return buildReportFromColumns(columns, transactions, 'individual-property', reportKind);
 }
 
 /** Widest startDate/endDate spanning every column, for a single transactions fetch. */
@@ -225,62 +258,21 @@ export function getReportDateSpan(columns: ReportColumn[]): { startDate: string;
   return { startDate, endDate };
 }
 
-export interface CostBaseRow {
-  propertyId: string;
-  propertyName: string;
-  purchasePrice: number;
-  costsByCategory: { category: string; label: string; amount: number }[];
-  totalCostBase: number;
-}
-
-export interface CostBaseReport {
-  asOfDate: string;
-  rows: CostBaseRow[];
-}
-
-/**
- * CGT cost base as of a given date: purchase price plus every 'cost'-type
- * transaction (stamp duty, conveyancer fees, capital improvements, ...)
- * dated on or before that date. Same "just sum the transactions" approach
- * as the income & expenditure report — no indexation or other CGT
- * adjustments are applied.
- */
-export function buildCostBaseReport(
-  properties: ReportProperty[],
-  transactions: Transaction[],
-  asOfDate: string
-): CostBaseReport {
-  const costCategories = Object.entries(categoryLabelsMap).filter(([, info]) => info.type === 'cost');
-
-  const rows: CostBaseRow[] = properties.map(property => {
-    const propertyCostTx = transactions.filter(t =>
-      t.propertyId === property.id && t.type === 'cost' && t.date <= asOfDate
-    );
-
-    const costsByCategory = costCategories
-      .map(([category, info]) => ({
-        category,
-        label: info.label,
-        amount: propertyCostTx
-          .filter(t => t.category === category)
-          .reduce((sum, t) => sum + (t.amount || 0), 0),
-      }))
-      .filter(row => row.amount !== 0);
-
-    const purchasePrice = Number(property.purchase_price) || 0;
-    const totalCostBase = purchasePrice + costsByCategory.reduce((sum, row) => sum + row.amount, 0);
-
-    return { propertyId: property.id, propertyName: property.name, purchasePrice, costsByCategory, totalCostBase };
-  });
-
-  return { asOfDate, rows };
-}
-
 export function reportToCSV(report: ReportData): string {
   const lines: string[] = [];
   const columnTitle = (c: ReportColumn) => report.mode === 'all-properties' ? c.propertyName : c.yearLabel;
 
   lines.push(['Category', ...report.columns.map(columnTitle)].map(csvEscape).join(','));
+
+  if (report.reportKind === 'cost-base') {
+    lines.push(['Purchase Price', ...report.columns.map(c => (report.purchasePriceByColumn[c.key] || 0).toFixed(2))].map(csvEscape).join(','));
+    for (const row of report.costRows) {
+      lines.push([row.label, ...report.columns.map(c => (row.amountsByColumn[c.key] || 0).toFixed(2))].map(csvEscape).join(','));
+    }
+    lines.push(['Total Cost Base', ...report.columns.map(c => (report.totalCostBaseByColumn[c.key] || 0).toFixed(2))].map(csvEscape).join(','));
+    return lines.join('\n');
+  }
+
   lines.push(['Income'].map(csvEscape).join(','));
   for (const row of report.incomeRows) {
     lines.push([row.label, ...report.columns.map(c => (row.amountsByColumn[c.key] || 0).toFixed(2))].map(csvEscape).join(','));

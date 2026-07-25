@@ -6,9 +6,8 @@ import TaxSupporting from "./taxsupporting";
 import DownloadDocuments from "./downloaddocuments";
 import ReportOutput from "./ReportOutput";
 import LoanSummaryOutput from "./LoanSummaryOutput";
-import CostBaseOutput from "./CostBaseOutput";
 import { getProperties, type Property } from "@/lib/property";
-import type { ReportData, CostBaseReport } from "@/lib/reports";
+import type { ReportData } from "@/lib/reports";
 
 
 export default function ReportsContent() {
@@ -17,8 +16,6 @@ export default function ReportsContent() {
   const [property, setProperty] = useState<string>("all");
   const [duration, setDuration] = useState<string>("fy");
   const [year, setYear] = useState<string>("FY 24-25");
-  // ISO format (YYYY-MM-DD) — required by the native <input type="date"> below.
-  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [customFromDate, setCustomFromDate] = useState<string>("");
   const [customToDate, setCustomToDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   // "YYYY-MM" — required by the native <input type="month"> below.
@@ -27,7 +24,6 @@ export default function ReportsContent() {
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [showOwnership, setShowOwnership] = useState(false);
   const [showLoanSummary, setShowLoanSummary] = useState(false);
-  const [costBaseReport, setCostBaseReport] = useState<CostBaseReport | null>(null);
 
   // Fetch properties on mount
   useEffect(() => {
@@ -62,8 +58,6 @@ export default function ReportsContent() {
             setDuration={setDuration}
             year={year}
             setYear={setYear}
-            selectedDate={selectedDate}
-            setSelectedDate={setSelectedDate}
             customFromDate={customFromDate}
             setCustomFromDate={setCustomFromDate}
             customToDate={customToDate}
@@ -75,7 +69,6 @@ export default function ReportsContent() {
             properties={properties}
             onReportGenerated={(report, ownership) => { setReportData(report); setShowOwnership(!!ownership); }}
             onGenerateLoanSummary={() => setShowLoanSummary(true)}
-            onCostBaseGenerated={setCostBaseReport}
           />
 
           {reportData && (
@@ -83,9 +76,6 @@ export default function ReportsContent() {
           )}
           {showLoanSummary && (
             <LoanSummaryOutput properties={properties} onClose={() => setShowLoanSummary(false)} />
-          )}
-          {costBaseReport && (
-            <CostBaseOutput report={costBaseReport} onClose={() => setCostBaseReport(null)} />
           )}
         </div>
 

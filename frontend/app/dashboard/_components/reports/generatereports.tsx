@@ -7,14 +7,13 @@ import { getTransactionsInRange } from "@/lib/transaction";
 import {
   buildAllPropertiesReport,
   buildIndividualPropertyReport,
-  buildCostBaseReport,
   financialYearPeriod,
   customDatePeriod,
   monthPeriod,
   getRecentFinancialYearLabels,
   type ReportData,
-  type CostBaseReport,
   type ReportPeriod,
+  type ReportKind,
 } from "@/lib/reports";
 
 interface GenerateReportsProps {
@@ -28,8 +27,6 @@ interface GenerateReportsProps {
   setDuration: (duration: string) => void;
   year: string;
   setYear: (year: string) => void;
-  selectedDate: string;
-  setSelectedDate: (date: string) => void;
   customFromDate: string;
   setCustomFromDate: (date: string) => void;
   customToDate: string;
@@ -41,7 +38,6 @@ interface GenerateReportsProps {
   properties: Property[];
   onReportGenerated: (report: ReportData | null, showOwnership?: boolean) => void;
   onGenerateLoanSummary: () => void;
-  onCostBaseGenerated: (report: CostBaseReport | null) => void;
 }
 
 export default function GenerateReports({
@@ -55,8 +51,6 @@ export default function GenerateReports({
   setDuration,
   year,
   setYear,
-  selectedDate,
-  setSelectedDate,
   customFromDate,
   setCustomFromDate,
   customToDate,
@@ -68,11 +62,12 @@ export default function GenerateReports({
   properties,
   onReportGenerated,
   onGenerateLoanSummary,
-  onCostBaseGenerated,
 }: GenerateReportsProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Validation function
+  // Income & Expenditure and Cost Base are the same report, just filtered to
+  // a different category type — same Report Scope / Properties / Duration
+  // controls, same builders, same output component.
   const handleGenerateReport = async () => {
     if (properties.length === 0) {
       alert("No properties available to generate a report.");
@@ -118,6 +113,7 @@ export default function GenerateReports({
       : financialYearPeriod(year);
 
     const isOwnershipWise = reportScope === "ownership";
+    const reportKind: ReportKind = reportType === "cost" ? "cost-base" : "income-expenditure";
 
     setIsGenerating(true);
     onReportGenerated(null, isOwnershipWise);
@@ -125,24 +121,24 @@ export default function GenerateReports({
       if (property === "all") {
         // All Properties / Ownership Wise (all): one column per property, all for the same period.
         const transactions = await getTransactionsInRange(singlePeriod);
-        onReportGenerated(buildAllPropertiesReport(properties, transactions, singlePeriod), isOwnershipWise);
+        onReportGenerated(buildAllPropertiesReport(properties, transactions, singlePeriod, reportKind), isOwnershipWise);
       } else {
         // Individual Property Report: one column per period, for that property.
-        // Ownership Wise always shows a single period (one column), even for
-        // Financial Year — the year-over-year comparison is specific to the
-        // plain Full Report.
+        // Ownership Wise and Cost Base always show a single period (one
+        // column), even for Financial Year — the year-over-year comparison
+        // is specific to the plain Income & Expenditure Full Report.
         const selectedProp = properties.find(p => p.id === property);
         if (!selectedProp) {
           alert("Selected property not found.");
           return;
         }
-        const periods: ReportPeriod[] = (duration === "fy" && !isOwnershipWise)
+        const periods: ReportPeriod[] = (duration === "fy" && !isOwnershipWise && reportKind === "income-expenditure")
           ? getRecentFinancialYearLabels(3, year).map(financialYearPeriod)
           : [singlePeriod];
         const startDate = periods.reduce((min, p) => (p.startDate < min ? p.startDate : min), periods[0].startDate);
         const endDate = periods.reduce((max, p) => (p.endDate > max ? p.endDate : max), periods[0].endDate);
         const transactions = await getTransactionsInRange({ propertyId: property, startDate, endDate });
-        onReportGenerated(buildIndividualPropertyReport(selectedProp, transactions, periods), isOwnershipWise);
+        onReportGenerated(buildIndividualPropertyReport(selectedProp, transactions, periods, reportKind), isOwnershipWise);
       }
     } catch {
       alert("Failed to generate report. Please try again.");
@@ -151,32 +147,8 @@ export default function GenerateReports({
     }
   };
 
-  const handleGenerateCostBaseReport = async () => {
-    if (properties.length === 0) {
-      alert("No properties available.");
-      return;
-    }
-    if (!selectedDate) {
-      alert("Please choose a date.");
-      return;
-    }
-
-    const selectedProperties = property === "all" ? properties : properties.filter(p => p.id === property);
-
-    setIsGenerating(true);
-    onCostBaseGenerated(null);
-    try {
-      const transactions = await getTransactionsInRange({ endDate: selectedDate });
-      const report = buildCostBaseReport(selectedProperties, transactions, selectedDate);
-      onCostBaseGenerated(report);
-    } catch {
-      alert("Failed to generate report. Please try again.");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const hasProperties = properties.length > 0;
+  const isReportTable = reportType === "income" || reportType === "cost";
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -235,56 +207,7 @@ export default function GenerateReports({
                 Email Report
               </button>
             </div>
-          ) : reportType === "cost" ? (
-            <>
-              <div className="mt-4 grid grid-cols-1 tablet:grid-cols-2 gap-4">
-                <div className="text-sm">
-                  <label className="block text-gray-600 mb-2">Properties*</label>
-                  <select
-                    value={property}
-                    onChange={(e) => setProperty(e.target.value)}
-                    className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-100"
-                    disabled={!hasProperties}
-                  >
-                    <option value="all">-- All Properties --</option>
-                    {properties.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="text-sm">
-                  <label className="block text-gray-600 mb-2">Date*</label>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-100"
-                    disabled={!hasProperties}
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex flex-wrap justify-center gap-4">
-                <button
-                  className={`px-6 py-2 rounded-full bg-blue-600 text-white font-medium shadow ${(!hasProperties || isGenerating) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  type="button"
-                  onClick={handleGenerateCostBaseReport}
-                  disabled={!hasProperties || isGenerating}
-                >
-                  {isGenerating ? 'Generating…' : 'Generate Report'}
-                </button>
-                <button
-                  className={`px-5 py-2 rounded-full bg-yellow-400 text-gray-900 font-medium ${!hasProperties ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  type="button"
-                  onClick={() => {
-                    if (hasProperties) console.log("Email Cost Base Report");
-                  }}
-                  disabled={!hasProperties}
-                >
-                  Email Report
-                </button>
-              </div>
-            </>
-          ) : (
+          ) : isReportTable ? (
             <>
               <div className="mt-4 grid grid-cols-1 tablet:grid-cols-2 gap-4">
                 <div>
@@ -311,7 +234,7 @@ export default function GenerateReports({
                         onChange={() => setReportScope("ownership")}
                         disabled={!hasProperties}
                       />
-                      <span>Ownership Wise</span>
+                      <span>Ownership Wise Report</span>
                     </label>
 
                     <label className={`inline-flex items-center gap-2 text-sm ${!hasProperties ? 'opacity-50' : ''}`}>
@@ -323,7 +246,7 @@ export default function GenerateReports({
                         onChange={() => setReportScope("unit")}
                         disabled={!hasProperties}
                       />
-                      <span>Unit Wise</span>
+                      <span>Unit Wise Report</span>
                     </label>
                   </div>
                 </div>
@@ -436,7 +359,7 @@ export default function GenerateReports({
                 </button>
               </div>
             </>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

@@ -60,9 +60,45 @@ export const categoryLabelsMap: Record<string, { label: string; type: 'income' |
   'internet': { label: 'Internet', type: 'expense' },
 
   // ============ COST CATEGORIES ============
+  // These are the CGT cost-base heads — separate from the like-named Expense
+  // categories above (e.g. LMI, Loan Set Up Cost, Depreciation), since the
+  // same cost can be either capitalised into cost base or claimed as an
+  // immediate expense depending on how the user treats it.
   'purchase-cost': { label: 'Purchase Cost', type: 'cost' },
   'stamp-duty': { label: 'Stamp Duty', type: 'cost' },
   'conveyancer-fees': { label: 'Conveyancer Fees', type: 'cost' },
+  'bank-fees-capitalised': { label: 'Bank Fees Capitalised', type: 'cost' },
+  'body-corporate-sinking-fund': { label: 'Body Corporate - Sinking Fund', type: 'cost' },
+  'building-pest-inspection': { label: 'Building and Pest Inspection', type: 'cost' },
+  'buyer-agent-fees': { label: 'Buyer agent fees', type: 'cost' },
+  'capital-improvement': { label: 'Capital Improvement', type: 'cost' },
+  'construction-cost': { label: 'Construction Cost', type: 'cost' },
+  'conveyancer-purchases': { label: 'Conveyancer Purchases', type: 'cost' },
+  'conveyancer-selling': { label: 'Conveyancer Selling', type: 'cost' },
+  'council-rates-capitalised': { label: 'Council Rates Capitalised', type: 'cost' },
+  'demolition-cost': { label: 'Demolition Cost', type: 'cost' },
+  'equipment-cost': { label: 'Equipment Cost', type: 'cost' },
+  'expenses-capitalised': { label: 'Expenses capitalised', type: 'cost' },
+  'insurance-capitalised': { label: 'Insurance Capitalised', type: 'cost' },
+  'interest-capitalised': { label: 'Interest Capitalised', type: 'cost' },
+  'land-tax-capitalised': { label: 'Land Tax Capitalised', type: 'cost' },
+  'lmi-capitalised': { label: 'LMI (Lender Mortgage Insurance)', type: 'cost' },
+  'loan-setup-cost-capitalised': { label: 'Loan Set Up Cost', type: 'cost' },
+  'pexa-fees': { label: 'Pexa Fees', type: 'cost' },
+  'plans-permit': { label: 'Plans & permit', type: 'cost' },
+  'repairs-capitalised': { label: 'Repairs Capitalised', type: 'cost' },
+  'selling-agent-advertising-fees': { label: 'Selling agent & advertising fees', type: 'cost' },
+  'staging-fees': { label: 'Staging fees', type: 'cost' },
+  'sub-division-cost': { label: 'Sub-division Cost', type: 'cost' },
+  'title-insurance': { label: 'Title Insurance', type: 'cost' },
+  'title-registration': { label: 'Title Registration', type: 'cost' },
+  'water-rates-capitalised': { label: 'Water Rates Capitalised', type: 'cost' },
+  'depreciation-schedule-capitalised': { label: 'Depreciation (from Schedule)', type: 'cost' },
+  'depreciation-manual': { label: 'Depreciation Manual', type: 'cost' },
+  'lmi-expenses-recognized': { label: 'LMI expenses recognized as expense', type: 'cost' },
+  'loan-setup-costs-expenses-recognized': { label: 'Loan Set up costs expenses recognized as expense', type: 'cost' },
+  'dep-div-43': { label: 'Dep-Div 43(Capital Improvements)', type: 'cost' },
+  'dep-div-40': { label: 'Dep-Div 40(Equipment Cost)', type: 'cost' },
 };
 
 export async function getCategoryLabels(): Promise<Record<string, { label: string; type: 'income' | 'expense' | 'cost' }>> {
