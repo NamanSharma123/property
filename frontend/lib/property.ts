@@ -320,3 +320,94 @@ export function getLoanSummary(property: { current_value?: number; marketValue?:
 
   return { totalLoan, netEquity, lvr, banks, primaryBank: banks[0] || null };
 }
+
+export const OWNERSHIP_TYPE_LABELS: Record<string, string> = {
+  'individual': 'Individual',
+  'joint-spouse': 'Joint - Spouse',
+  'joint-other': 'Joint - Other',
+  'family-trust': 'Family Trust',
+  'trust-partnership': 'Trust - Partnership',
+  'smsf': 'SMSF',
+  'company': 'Company',
+  'unit-trust': 'Unit Trust',
+};
+
+interface OwnershipOwner {
+  name?: string;
+  ownership?: string | number;
+}
+
+interface OwnershipDetailsShape {
+  type?: string;
+  owners?: OwnershipOwner[];
+  trustOwners?: { trustName?: string; ownership?: string | number }[];
+  familyTrust?: { trustName?: string };
+  smsf?: { trustName?: string };
+}
+
+export interface OwnershipInfo {
+  /** e.g. "Family Trust", "Joint - Spouse" */
+  typeLabel: string;
+  /** Combined owner/entity name(s) + total ownership %, e.g. "Addi and Shah (100.00%)" */
+  ownerLabel: string;
+}
+
+function joinNames(names: string[]): string {
+  const clean = names.filter(n => n && n.trim());
+  if (clean.length === 0) return '';
+  if (clean.length === 1) return clean[0];
+  return `${clean.slice(0, -1).join(', ')} and ${clean[clean.length - 1]}`;
+}
+
+/**
+ * Ownership Wise reports need both the ownership TYPE (Individual, Family
+ * Trust, ...) and a human-readable owner/entity label with its combined %
+ * share — e.g. two joint owners collapse into one "Addi and Shah (100.00%)"
+ * row rather than two separate rows, since ownership_details describes a
+ * single ownership structure per property.
+ */
+export function getOwnershipInfo(property: { ownership?: string; ownershipDetails?: unknown; ownership_details?: unknown }): OwnershipInfo {
+  const fallbackType = property.ownership || 'Individual';
+  let details: OwnershipDetailsShape | null = null;
+
+  try {
+    const raw = property.ownershipDetails ?? property.ownership_details;
+    details = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) as OwnershipDetailsShape : null;
+  } catch { /* ignore malformed ownership_details */ }
+
+  const type = details?.type;
+  const typeLabel = (type && OWNERSHIP_TYPE_LABELS[type]) || fallbackType;
+
+  if (!details) {
+    return { typeLabel, ownerLabel: '' };
+  }
+
+  if (type === 'joint-spouse' || type === 'joint-other') {
+    const owners = details.owners || [];
+    const total = owners.reduce((sum, o) => sum + (parseFloat(String(o.ownership)) || 0), 0);
+    const names = joinNames(owners.map(o => o.name || ''));
+    return { typeLabel, ownerLabel: names ? `${names} (${total.toFixed(2)}%)` : '' };
+  }
+
+  if (type === 'trust-partnership') {
+    const trustOwners = details.trustOwners || [];
+    const total = trustOwners.reduce((sum, o) => sum + (parseFloat(String(o.ownership)) || 0), 0);
+    const names = joinNames(trustOwners.map(o => o.trustName || ''));
+    return { typeLabel, ownerLabel: names ? `${names} (${total.toFixed(2)}%)` : '' };
+  }
+
+  if (type === 'family-trust') {
+    const name = details.familyTrust?.trustName || '';
+    return { typeLabel, ownerLabel: name ? `${name} (100.00%)` : '' };
+  }
+
+  if (type === 'smsf') {
+    const name = details.smsf?.trustName || '';
+    return { typeLabel, ownerLabel: name ? `${name} (100.00%)` : '' };
+  }
+
+  // individual, company, unit-trust — single named owner at 100%.
+  const owner = details.owners?.[0];
+  const ownership = owner?.ownership !== undefined ? parseFloat(String(owner.ownership)) : 100;
+  return { typeLabel, ownerLabel: owner?.name ? `${owner.name} (${ownership.toFixed(2)}%)` : '' };
+}

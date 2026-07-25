@@ -39,7 +39,7 @@ interface GenerateReportsProps {
   reportTypeTabs: { id: string; label: string }[];
   years: string[];
   properties: Property[];
-  onReportGenerated: (report: ReportData | null) => void;
+  onReportGenerated: (report: ReportData | null, showOwnership?: boolean) => void;
   onGenerateLoanSummary: () => void;
   onCostBaseGenerated: (report: CostBaseReport | null) => void;
 }
@@ -90,8 +90,8 @@ export default function GenerateReports({
       }
     }
 
-    if (reportScope !== "full") {
-      alert(`${reportScope === "ownership" ? "Ownership Wise" : "Unit Wise"} reports aren't available yet — showing the Full Report instead.`);
+    if (reportScope === "unit") {
+      alert("Unit Wise reports aren't available yet — showing the Full Report instead.");
     }
 
     if (duration === "custom") {
@@ -117,27 +117,32 @@ export default function GenerateReports({
       : duration === "month" ? monthPeriod(selectedMonth)
       : financialYearPeriod(year);
 
+    const isOwnershipWise = reportScope === "ownership";
+
     setIsGenerating(true);
-    onReportGenerated(null);
+    onReportGenerated(null, isOwnershipWise);
     try {
       if (property === "all") {
-        // All Properties Report: one column per property, all for the same period.
+        // All Properties / Ownership Wise (all): one column per property, all for the same period.
         const transactions = await getTransactionsInRange(singlePeriod);
-        onReportGenerated(buildAllPropertiesReport(properties, transactions, singlePeriod));
+        onReportGenerated(buildAllPropertiesReport(properties, transactions, singlePeriod), isOwnershipWise);
       } else {
         // Individual Property Report: one column per period, for that property.
+        // Ownership Wise always shows a single period (one column), even for
+        // Financial Year — the year-over-year comparison is specific to the
+        // plain Full Report.
         const selectedProp = properties.find(p => p.id === property);
         if (!selectedProp) {
           alert("Selected property not found.");
           return;
         }
-        const periods: ReportPeriod[] = duration === "fy"
+        const periods: ReportPeriod[] = (duration === "fy" && !isOwnershipWise)
           ? getRecentFinancialYearLabels(3, year).map(financialYearPeriod)
           : [singlePeriod];
         const startDate = periods.reduce((min, p) => (p.startDate < min ? p.startDate : min), periods[0].startDate);
         const endDate = periods.reduce((max, p) => (p.endDate > max ? p.endDate : max), periods[0].endDate);
         const transactions = await getTransactionsInRange({ propertyId: property, startDate, endDate });
-        onReportGenerated(buildIndividualPropertyReport(selectedProp, transactions, periods));
+        onReportGenerated(buildIndividualPropertyReport(selectedProp, transactions, periods), isOwnershipWise);
       }
     } catch {
       alert("Failed to generate report. Please try again.");

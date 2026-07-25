@@ -106,7 +106,13 @@ const OWNERSHIP_TYPES = [
   { value: 'family-trust', label: 'Family Trust' },
   { value: 'trust-partnership', label: 'Trust - Partnership' },
   { value: 'smsf', label: 'SMSF' },
+  { value: 'company', label: 'Company' },
+  { value: 'unit-trust', label: 'Unit Trust' },
 ];
+
+// Company and Unit Trust are a single legal-entity owner, same shape as
+// Individual (one name, 100% ownership) — just a different label on the input.
+const SINGLE_OWNER_TYPES = ['individual', 'company', 'unit-trust'];
 
 const BANKS = [
   { value: 'commonwealth', label: 'Commonwealth Bank' },
@@ -270,6 +276,8 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
         'Family Trust': 'family-trust',
         'Trust - Partnership': 'trust-partnership',
         'SMSF': 'smsf',
+        'Company': 'company',
+        'Unit Trust': 'unit-trust',
       };
       // Store in local variable since setState is async and won't be available yet
       const currentOwnershipType = ownershipMapping[property.ownership || 'Individual'] || 'individual';
@@ -427,7 +435,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
       return; // Don't reset for edit mode
     }
 
-    if (ownershipType === 'individual') {
+    if (SINGLE_OWNER_TYPES.includes(ownershipType)) {
       setOwners([{ id: '1', name: '', ownership: '100' }]);
     } else if (ownershipType === 'joint-spouse') {
       setOwners([
@@ -635,8 +643,8 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
     const otErr = getOwnershipTypeError(ownershipType);
     if (otErr) errors.ownershipType = otErr;
 
-    if (ownershipType === 'individual') {
-      const nameErr = getNameError(owners[0]?.name || '', 'Owner name');
+    if (SINGLE_OWNER_TYPES.includes(ownershipType)) {
+      const nameErr = getNameError(owners[0]?.name || '', ownershipType === 'individual' ? 'Owner name' : 'Name');
       if (nameErr) errors.ownerName = nameErr;
     } else if (ownershipType === 'joint-spouse' || ownershipType === 'joint-other') {
       owners.forEach((owner, index) => {
@@ -1019,7 +1027,7 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
       // Store ownership details as JSON
       const ownershipDetails = {
         type: ownershipType,
-        owners: ownershipType.includes('joint') || ownershipType === 'individual' ? owners : undefined,
+        owners: ownershipType.includes('joint') || SINGLE_OWNER_TYPES.includes(ownershipType) ? owners : undefined,
         trustOwners: ownershipType === 'trust-partnership' ? trustOwners : undefined,
         familyTrust: ownershipType === 'family-trust' ? { trustName: familyTrustName, companyTrustee: familyCompanyTrustee } : undefined,
         smsf: ownershipType === 'smsf' ? { trustName: smsfTrustName, companyTrustee: smsfCompanyTrustee, bareTrust: smsfBareTrust, bareTrustee: smsfBareTrustee } : undefined,
@@ -1484,12 +1492,15 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
                 )}
               </div>
 
-              {/* Individual */}
-              {ownershipType === 'individual' && (
+              {/* Individual, Company, Unit Trust — a single named owner at 100% */}
+              {SINGLE_OWNER_TYPES.includes(ownershipType) && (
                 <div className="bg-gray-50 rounded-xl p-6 mt-4">
-                  <Label className="text-gray-700">Owner Name<span className="text-red-500">*</span></Label>
+                  <Label className="text-gray-700">
+                    {ownershipType === 'company' ? 'Company Name' : ownershipType === 'unit-trust' ? 'Unit Trust Name' : 'Owner Name'}
+                    <span className="text-red-500">*</span>
+                  </Label>
                   <Input
-                    placeholder="Enter owner name"
+                    placeholder={ownershipType === 'company' ? 'Enter company name' : ownershipType === 'unit-trust' ? 'Enter unit trust name' : 'Enter owner name'}
                     className={cn("mt-2 h-11 bg-white border-gray-200", fieldErrors.ownerName && "border-red-500 focus-visible:ring-red-500")}
                     value={owners[0]?.name || ''}
                     onChange={(e) => updateOwner('1', 'name', e.target.value)}

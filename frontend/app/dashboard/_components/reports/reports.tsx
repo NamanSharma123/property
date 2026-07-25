@@ -25,6 +25,7 @@ export default function ReportsContent() {
   const [selectedMonth, setSelectedMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [properties, setProperties] = useState<Property[]>([]);
   const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [showOwnership, setShowOwnership] = useState(false);
   const [showLoanSummary, setShowLoanSummary] = useState(false);
   const [costBaseReport, setCostBaseReport] = useState<CostBaseReport | null>(null);
 
@@ -72,13 +73,13 @@ export default function ReportsContent() {
             reportTypeTabs={reportTypeTabs}
             years={years}
             properties={properties}
-            onReportGenerated={setReportData}
+            onReportGenerated={(report, ownership) => { setReportData(report); setShowOwnership(!!ownership); }}
             onGenerateLoanSummary={() => setShowLoanSummary(true)}
             onCostBaseGenerated={setCostBaseReport}
           />
 
           {reportData && (
-            <ReportOutput report={reportData} onClose={() => setReportData(null)} />
+            <ReportOutput report={reportData} onClose={() => setReportData(null)} showOwnership={showOwnership} />
           )}
           {showLoanSummary && (
             <LoanSummaryOutput properties={properties} onClose={() => setShowLoanSummary(false)} />

@@ -1,6 +1,7 @@
 'use client';
 
 import { categoryLabelsMap, type Transaction } from './transaction';
+import { getOwnershipInfo } from './property';
 
 // Minimal structural shape the report builders need — deliberately not the
 // full Property type, so callers with their own local property type (e.g.
@@ -13,6 +14,9 @@ export interface ReportProperty {
   purchase_price?: number;
   current_value?: number;
   marketValue?: number | string;
+  ownership?: string;
+  ownershipDetails?: unknown;
+  ownership_details?: unknown;
 }
 
 // Australian financial year: 1 Jul – 30 Jun. "FY 25-26" -> 2025-07-01..2026-06-30.
@@ -92,6 +96,10 @@ export interface ReportColumn {
   yearLabel: string;
   startDate: string;
   endDate: string;
+  /** e.g. "Family Trust" */
+  ownershipTypeLabel: string;
+  /** e.g. "Addi and Shah (100.00%)" */
+  ownerLabel: string;
 }
 
 export interface ReportRow {
@@ -172,15 +180,20 @@ export function buildAllPropertiesReport(
   transactions: Transaction[],
   period: ReportPeriod
 ): ReportData {
-  const columns: ReportColumn[] = properties.map(p => ({
-    key: p.id,
-    propertyId: p.id,
-    propertyName: p.name,
-    propertyAddress: getPropertyAddress(p),
-    yearLabel: period.label,
-    startDate: period.startDate,
-    endDate: period.endDate,
-  }));
+  const columns: ReportColumn[] = properties.map(p => {
+    const ownership = getOwnershipInfo(p);
+    return {
+      key: p.id,
+      propertyId: p.id,
+      propertyName: p.name,
+      propertyAddress: getPropertyAddress(p),
+      yearLabel: period.label,
+      startDate: period.startDate,
+      endDate: period.endDate,
+      ownershipTypeLabel: ownership.typeLabel,
+      ownerLabel: ownership.ownerLabel,
+    };
+  });
   return buildReportFromColumns(columns, transactions, 'all-properties');
 }
 
@@ -190,6 +203,7 @@ export function buildIndividualPropertyReport(
   transactions: Transaction[],
   periods: ReportPeriod[]
 ): ReportData {
+  const ownership = getOwnershipInfo(property);
   const columns: ReportColumn[] = periods.map((period, i) => ({
     key: `${period.label}-${i}`,
     propertyId: property.id,
@@ -198,6 +212,8 @@ export function buildIndividualPropertyReport(
     yearLabel: period.label,
     startDate: period.startDate,
     endDate: period.endDate,
+    ownershipTypeLabel: ownership.typeLabel,
+    ownerLabel: ownership.ownerLabel,
   }));
   return buildReportFromColumns(columns, transactions, 'individual-property');
 }

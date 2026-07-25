@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Building2, Search, Plus, Pencil, Trash2, Loader2, AlertTriangle, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { MultiStepPropertyForm } from "@/app/dashboard/_components/property/MultiStepPropertyForm";
-import { removeProperty, getLoanSummary, getBankLabel, type Property } from "@/lib/property";
+import { removeProperty, getLoanSummary, getBankLabel, getOwnershipInfo, type Property } from "@/lib/property";
 import { usePropertiesSWR } from "@/hooks/usePropertiesSWR";
 import { PropertyListSkeleton } from "@/components/ui/skeletons";
 
@@ -330,28 +330,7 @@ const Property = () => {
                     </div>
                     <div>
                       <div className="text-sm text-muted-foreground mb-1">Ownership</div>
-                      <div className="font-semibold">
-                        {(() => {
-                          try {
-                            const detailsStr = property.ownershipDetails || property.ownership_details;
-                            if (detailsStr) {
-                              const details = typeof detailsStr === 'string' ? JSON.parse(detailsStr) : detailsStr;
-                              const typeLabels: Record<string, string> = {
-                                'individual': 'Individual',
-                                'joint-spouse': 'Joint - Spouse',
-                                'joint-other': 'Joint - Other',
-                                'family-trust': 'Family Trust',
-                                'trust-partnership': 'Trust Partnership',
-                                'smsf': 'SMSF',
-                              };
-                              return typeLabels[details.type] || property.ownership || 'Individual';
-                            }
-                            return property.ownership || 'Individual';
-                          } catch {
-                            return property.ownership || 'Individual';
-                          }
-                        })()}
-                      </div>
+                      <div className="font-semibold">{getOwnershipInfo(property).typeLabel}</div>
                     </div>
                   </div>
 
