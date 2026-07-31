@@ -7,15 +7,16 @@ import DownloadDocuments from "./downloaddocuments";
 import ReportOutput from "./ReportOutput";
 import LoanSummaryOutput from "./LoanSummaryOutput";
 import { getProperties, type Property } from "@/lib/property";
-import type { ReportData } from "@/lib/reports";
+import { getCurrentFinancialYearLabel, getRecentFinancialYearLabels, type ReportData } from "@/lib/reports";
 
+const CURRENT_FY = getCurrentFinancialYearLabel();
 
 export default function ReportsContent() {
   const [reportType, setReportType] = useState<string>("income");
   const [reportScope, setReportScope] = useState<string>("full");
   const [property, setProperty] = useState<string>("all");
   const [duration, setDuration] = useState<string>("fy");
-  const [year, setYear] = useState<string>("FY 24-25");
+  const [year, setYear] = useState<string>(CURRENT_FY);
   const [customFromDate, setCustomFromDate] = useState<string>("");
   const [customToDate, setCustomToDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   // "YYYY-MM" — required by the native <input type="month"> below.
@@ -40,7 +41,9 @@ export default function ReportsContent() {
     { id: "loan", label: "Loan Summary" },
   ];
 
-  const years = ["FY 25-26", "FY 24-25", "FY 23-24", "FY 22-23"];
+  // Always anchored to today's financial year, so the current FY (and this
+  // year's transactions) are selectable without a yearly code change.
+  const years = getRecentFinancialYearLabels(5, CURRENT_FY);
 
   return (
     <main className="flex-1 overflow-auto p-4 sm:p-6 bg-gray-50 min-h-screen">
