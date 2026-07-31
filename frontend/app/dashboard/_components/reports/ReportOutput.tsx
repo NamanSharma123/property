@@ -10,7 +10,11 @@ function formatCurrency(value: number): string {
 }
 
 export default function ReportOutput({ report, onClose, showOwnership }: { report: ReportData; onClose?: () => void; showOwnership?: boolean }) {
-  const isAllProperties = report.mode === 'all-properties';
+  // Columns are named entities (a property, or a unit) rather than years —
+  // true for both All Properties and Unit Wise, which share the same
+  // one-column-per-entity/one-shared-period layout.
+  const isEntityColumns = report.mode === 'all-properties' || report.mode === 'unit-wise';
+  const isUnitWise = report.mode === 'unit-wise';
   const isCostBase = report.reportKind === 'cost-base';
   const [showFilter, setShowFilter] = useState(false);
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
@@ -38,8 +42,8 @@ export default function ReportOutput({ report, onClose, showOwnership }: { repor
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    // Property names often contain "/" (e.g. "2/35 Hurley St"), which breaks a filename.
-    const suffix = (isAllProperties ? report.columns[0]?.yearLabel : report.columns[0]?.propertyName) || 'report';
+    // Property/unit names often contain "/" (e.g. "2/35 Hurley St"), which breaks a filename.
+    const suffix = (isEntityColumns ? report.columns[0]?.yearLabel : report.columns[0]?.propertyName) || 'report';
     const prefix = isCostBase ? 'cost-base-report' : 'income-expenditure-report';
     link.download = `${prefix}-${suffix.replace(/[\\/:*?"<>|]/g, '-')}.csv`;
     link.click();
@@ -47,8 +51,8 @@ export default function ReportOutput({ report, onClose, showOwnership }: { repor
   };
 
   const title = isCostBase
-    ? (showOwnership ? 'Ownership Wise Cost Base Report' : 'Cost Base Report')
-    : (showOwnership ? 'Ownership Wise Report' : isAllProperties ? 'All Properties Report' : 'Individual Property Report');
+    ? (showOwnership ? 'Ownership Wise Cost Base Report' : isUnitWise ? 'Unit Wise Cost Base Report' : 'Cost Base Report')
+    : (showOwnership ? 'Ownership Wise Report' : isUnitWise ? 'Unit Wise Report' : isEntityColumns ? 'All Properties Report' : 'Individual Property Report');
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
@@ -56,7 +60,7 @@ export default function ReportOutput({ report, onClose, showOwnership }: { repor
         <div>
           <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
           <p className="text-sm text-gray-500">
-            {isAllProperties
+            {isEntityColumns
               ? report.columns[0]?.yearLabel
               : report.columns[0]?.propertyAddress}
           </p>
@@ -142,9 +146,9 @@ export default function ReportOutput({ report, onClose, showOwnership }: { repor
                     {report.columns.map(c => (
                       <th key={c.key} className="text-right p-2 bg-blue-50 border-b border-blue-100 min-w-[140px]">
                         <div className="font-semibold text-gray-900">
-                          {isAllProperties ? c.propertyName : c.yearLabel}
+                          {isEntityColumns ? c.propertyName : c.yearLabel}
                         </div>
-                        {isAllProperties && (
+                        {isEntityColumns && (
                           <div className="text-xs font-normal text-gray-500 truncate max-w-[180px] ml-auto">{c.propertyAddress}</div>
                         )}
                       </th>

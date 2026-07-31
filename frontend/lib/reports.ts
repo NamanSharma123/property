@@ -101,6 +101,8 @@ export interface ReportColumn {
   /** e.g. "Addi and Shah (100.00%)" */
   ownerLabel: string;
   purchasePrice: number;
+  /** Unit Wise Report only — restricts this column to transactions tagged with this unit. */
+  unitLabel?: string;
 }
 
 export interface ReportRow {
@@ -112,8 +114,8 @@ export interface ReportRow {
 export type ReportKind = 'income-expenditure' | 'cost-base';
 
 export interface ReportData {
-  /** "all-properties": one column per property (same period). "individual-property": one column per year (same property). */
-  mode: 'all-properties' | 'individual-property';
+  /** "all-properties": one column per property (same period). "individual-property": one column per year (same property). "unit-wise": one column per unit (same property, same period). */
+  mode: 'all-properties' | 'individual-property' | 'unit-wise';
   reportKind: ReportKind;
   columns: ReportColumn[];
   // Income & Expenditure
@@ -156,7 +158,8 @@ function buildReportFromColumns(
         amountsByColumn[col.key] = transactions
           .filter(t =>
             t.propertyId === col.propertyId && t.category === category && t.type === type &&
-            t.date >= col.startDate && t.date <= col.endDate
+            t.date >= col.startDate && t.date <= col.endDate &&
+            (col.unitLabel === undefined || t.unitLabel === col.unitLabel)
           )
           .reduce((sum, t) => sum + (t.amount || 0), 0);
       }
@@ -251,6 +254,39 @@ export function buildIndividualPropertyReport(
   return buildReportFromColumns(columns, transactions, 'individual-property', reportKind);
 }
 
+/**
+ * Unit Wise Report: one column per unit of a single multi-unit property, all
+ * for the same period — same shape as the All Properties Report, just with
+ * "unit" standing in for "property". unitLabels is the property's own set of
+ * units (see getUnitLabelsForProperty); transactions are matched to a column
+ * via ReportColumn.unitLabel, same as every other column matches on propertyId.
+ */
+export function buildUnitWiseReport(
+  property: ReportProperty,
+  unitLabels: string[],
+  transactions: Transaction[],
+  period: ReportPeriod,
+  reportKind: ReportKind = 'income-expenditure'
+): ReportData {
+  const ownership = getOwnershipInfo(property);
+  const purchasePrice = Number(property.purchase_price) || 0;
+  const baseAddress = getPropertyAddress(property);
+  const columns: ReportColumn[] = unitLabels.map(unit => ({
+    key: unit,
+    propertyId: property.id,
+    propertyName: `Unit ${unit}`,
+    propertyAddress: baseAddress ? `${unit}/${baseAddress}` : `Unit ${unit}`,
+    yearLabel: period.label,
+    startDate: period.startDate,
+    endDate: period.endDate,
+    ownershipTypeLabel: ownership.typeLabel,
+    ownerLabel: ownership.ownerLabel,
+    purchasePrice,
+    unitLabel: unit,
+  }));
+  return buildReportFromColumns(columns, transactions, 'unit-wise', reportKind);
+}
+
 /** Widest startDate/endDate spanning every column, for a single transactions fetch. */
 export function getReportDateSpan(columns: ReportColumn[]): { startDate: string; endDate: string } {
   const startDate = columns.reduce((min, c) => (c.startDate < min ? c.startDate : min), columns[0]?.startDate || '');
@@ -260,7 +296,7 @@ export function getReportDateSpan(columns: ReportColumn[]): { startDate: string;
 
 export function reportToCSV(report: ReportData): string {
   const lines: string[] = [];
-  const columnTitle = (c: ReportColumn) => report.mode === 'all-properties' ? c.propertyName : c.yearLabel;
+  const columnTitle = (c: ReportColumn) => report.mode === 'individual-property' ? c.yearLabel : c.propertyName;
 
   lines.push(['Category', ...report.columns.map(columnTitle)].map(csvEscape).join(','));
 

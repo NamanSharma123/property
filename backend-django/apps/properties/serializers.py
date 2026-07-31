@@ -45,7 +45,9 @@ def map_property_type(frontend_type):
 def build_full_address(address):
     if not isinstance(address, dict):
         return ''
-    return (
-        f"{address.get('street', '')}, {address.get('city', '')}, "
-        f"{address.get('state', '')} {address.get('zipCode', '')}"
-    )
+    # Strip stray trailing commas/whitespace from each part so dirty input
+    # (e.g. a street already saved as "41 Swanson St,") never produces "St,,".
+    street = str(address.get('street') or '').strip().rstrip(',').strip()
+    city = str(address.get('city') or '').strip().rstrip(',').strip()
+    tail = f"{address.get('state', '')} {address.get('zipCode', '')}".strip()
+    return ', '.join(part for part in (street, city, tail) if part)

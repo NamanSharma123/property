@@ -141,7 +141,7 @@ exports.getTransaction = async (req, res, next) => {
 exports.createTransaction = async (req, res, next) => {
   try {
     const {
-      description, amount, date, type, categoryId, categoryName,
+      description, amount, date, type, categoryId, categoryName, unitLabel,
       propertyId, tenantId, status, paymentMethod, referenceNumber,
       receiptUrl, attachments, isRecurring, recurringFrequency,
       recurringEndDate, notes, isTaxDeductible, taxCategory, transactionSource
@@ -179,18 +179,22 @@ exports.createTransaction = async (req, res, next) => {
     // or we should matching against what we are about to insert.
     const dupDescription = description || '';
     const dupCategory = categoryName || '';
+    // Different units can legitimately have identical-looking transactions
+    // (e.g. the same rent amount on the same day for Unit A and Unit B).
+    const dupUnit = unitLabel || '';
 
     const duplicateCheck = await db.query(
-      `SELECT id FROM transactions 
-       WHERE property_id = $1 
-       AND amount = $2 
-       AND date::date = $3::date 
+      `SELECT id FROM transactions
+       WHERE property_id = $1
+       AND amount = $2
+       AND date::date = $3::date
        AND COALESCE(description, '') = $4
        AND COALESCE(category_name, '') = $5
        AND type = $6
        AND owner_id = $7
+       AND COALESCE(unit_label, '') = $8
        LIMIT 1`,
-      [propertyId, amount, date || new Date(), dupDescription, dupCategory, type, req.user.id]
+      [propertyId, amount, date || new Date(), dupDescription, dupCategory, type, req.user.id, dupUnit]
     );
 
     if (duplicateCheck.rows.length > 0) {
@@ -205,15 +209,15 @@ exports.createTransaction = async (req, res, next) => {
     const result = await db.query(
       `INSERT INTO transactions (
         owner_id, property_id, tenant_id, category_id, description, amount, date, type,
-        category_name, transaction_source, status, payment_method, reference_number, receipt_url, attachments,
+        category_name, unit_label, transaction_source, status, payment_method, reference_number, receipt_url, attachments,
         is_recurring, recurring_frequency, recurring_end_date, notes, is_tax_deductible,
         tax_category, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       RETURNING *`,
       [
         req.user.id, propertyId, tenantId || null, categoryId || null,
         description, amount, date || new Date(), type,
-        categoryName || null, transactionSource || 'Manual Entry', status || 'pending', paymentMethod || null,
+        categoryName || null, unitLabel || null, transactionSource || 'Manual Entry', status || 'pending', paymentMethod || null,
         referenceNumber || null, receiptUrl || null, JSON.stringify(attachments || []),
         isRecurring || false, recurringFrequency || null, recurringEndDate || null,
         notes || null, isTaxDeductible || false, taxCategory || null, req.user.id
@@ -265,7 +269,7 @@ exports.updateTransaction = async (req, res, next) => {
 
     const allowedFields = [
       'description', 'amount', 'date', 'type', 'category_id', 'category_name',
-      'property_id', 'tenant_id', 'status', 'payment_method', 'reference_number',
+      'unit_label', 'property_id', 'tenant_id', 'status', 'payment_method', 'reference_number',
       'receipt_url', 'attachments', 'is_recurring', 'recurring_frequency',
       'recurring_end_date', 'notes', 'is_tax_deductible', 'tax_category'
     ];

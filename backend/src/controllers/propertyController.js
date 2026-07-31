@@ -53,6 +53,19 @@ const mapPropertyType = (frontendType) => {
 };
 
 /**
+ * Build the denormalized full_address string from an address object.
+ * Strips stray trailing commas/whitespace from each part so dirty input
+ * (e.g. a street already saved as "41 Swanson St,") never produces "St,,".
+ */
+const buildFullAddress = (address) => {
+  if (!address || typeof address !== 'object') return '';
+  const street = (address.street || '').toString().trim().replace(/,+$/, '').trim();
+  const city = (address.city || '').toString().trim().replace(/,+$/, '').trim();
+  const tail = `${address.state || ''} ${address.zipCode || ''}`.trim();
+  return [street, city, tail].filter(Boolean).join(', ');
+};
+
+/**
  * Log activity
  */
 const logActivity = async (data) => {
@@ -178,8 +191,7 @@ exports.createProperty = async (req, res, next) => {
     } = req.body;
 
     // Generate full address
-    const fullAddress = address ?
-      `${address.street || ''}, ${address.city || ''}, ${address.state || ''} ${address.zipCode || ''}` : '';
+    const fullAddress = buildFullAddress(address);
 
     const result = await db.query(
       `INSERT INTO properties (
@@ -303,8 +315,7 @@ exports.updateProperty = async (req, res, next) => {
 
     // Update full_address if address changed
     if (updates.address) {
-      const addr = updates.address;
-      const fullAddress = `${addr.street || ''}, ${addr.city || ''}, ${addr.state || ''} ${addr.zipCode || ''}`;
+      const fullAddress = buildFullAddress(updates.address);
       setClauses.push(`full_address = $${paramIndex}`);
       values.push(fullAddress);
       paramIndex++;

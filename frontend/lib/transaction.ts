@@ -10,6 +10,8 @@ export interface Transaction {
   propertyType?: string;
   category: string;
   categoryLabel?: string;
+  /** Which unit within a multi-unit property this belongs to (e.g. "A", "3") — undefined for single-dwelling properties. */
+  unitLabel?: string;
   type: 'income' | 'expense' | 'cost';
   amount: number;
   date: string;
@@ -117,6 +119,7 @@ export async function getTransactions(): Promise<Transaction[]> {
         propertyName: t.property_name as string,
         category: categoryName,
         categoryLabel: t.category_display_name as string || categoryLabelsMap[categoryName]?.label || categoryName,
+        unitLabel: t.unit_label as string || undefined,
         type: t.type as 'income' | 'expense',
         amount: parseFloat(t.amount as string),
         date: t.date as string,
@@ -140,6 +143,7 @@ export async function getTransactionsByProperty(propertyId: string): Promise<Tra
         propertyName: t.property_name as string,
         category: categoryName,
         categoryLabel: t.category_display_name as string || categoryLabelsMap[categoryName]?.label || categoryName,
+        unitLabel: t.unit_label as string || undefined,
         type: t.type as 'income' | 'expense',
         amount: parseFloat(t.amount as string),
         date: t.date as string,
@@ -165,6 +169,7 @@ export async function getTransactionsInRange(range: { startDate?: string; endDat
         propertyName: t.property_name as string,
         category: categoryName,
         categoryLabel: t.category_display_name as string || categoryLabelsMap[categoryName]?.label || categoryName,
+        unitLabel: t.unit_label as string || undefined,
         type: t.type as 'income' | 'expense' | 'cost',
         amount: parseFloat(t.amount as string),
         date: t.date as string,
@@ -181,6 +186,7 @@ export async function addTransaction(data: {
   propertyName?: string;
   propertyType?: string;
   category: string;
+  unitLabel?: string;
   amount: number;
   date: string;
   transactionSource?: string;
@@ -198,6 +204,7 @@ export async function addTransaction(data: {
     categoryName: data.category,
     transactionSource: data.transactionSource || 'Manual Entry',
     status: 'paid',
+    ...(data.unitLabel ? { unitLabel: data.unitLabel } : {}),
     ...(data.receiptUrl ? { receiptUrl: data.receiptUrl } : {}),
   });
 
@@ -213,6 +220,7 @@ export async function addMultipleTransactions(items: Array<{
   propertyName?: string;
   propertyType?: string;
   category: string;
+  unitLabel?: string;
   amount: number;
   date: string;
   transactionSource?: string;
@@ -258,6 +266,7 @@ export async function updateTransaction(
     updateData.categoryName = data.category;
     updateData.type = categoryInfo.type;
   }
+  if (data.unitLabel !== undefined) updateData.unitLabel = data.unitLabel;
 
   const response = await transactionsApi.update(transactionId, updateData);
 

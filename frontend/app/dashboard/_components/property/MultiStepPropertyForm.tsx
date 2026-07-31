@@ -19,7 +19,7 @@ import {
   MapPin,
   HelpCircle
 } from 'lucide-react';
-import { addProperty, updateProperty, getProperties, type Property } from '@/lib/property';
+import { addProperty, updateProperty, getProperties, getPropertyUnitLabels, type Property } from '@/lib/property';
 import { documentsApi } from '@/lib/api';
 import {
   Tooltip,
@@ -256,7 +256,8 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
       console.log('Parsed addressObj:', addressObj);
 
       // Extract street number and name from the property name or address.street
-      const streetAddress = addressObj.street || property.name || '';
+      // Strip a stray trailing comma so it doesn't keep getting re-saved (and re-doubled) on edit
+      const streetAddress = (addressObj.street || property.name || '').trim().replace(/,\s*$/, '');
       const addressParts = streetAddress.split(' ');
       const streetNoFromName = addressParts[0] || '';
       const streetNameFromName = addressParts.slice(1).join(' ') || '';
@@ -622,22 +623,11 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
 
   // Generate address preview
   const getAddressPreview = () => {
-    if (propertyStructure === 'single-dwelling') return [];
-
-    const count = parseInt(numberOfUnits) || 0;
     const street = `${streetNo} ${streetName}`.trim();
     if (!street) return [];
 
-    const addresses: string[] = [];
-    if (propertyStructure === 'duplex') {
-      addresses.push(`A/${street}`, `B/${street}`);
-    } else if (propertyStructure === 'rooming-house' || propertyStructure === 'block-of-units') {
-      // Only generate preview if count is within valid range (1-20)
-      if (count >= 1 && count <= 20) {
-        for (let i = 1; i <= count; i++) addresses.push(`${i}/${street}`);
-      }
-    }
-    return addresses;
+    const count = parseInt(numberOfUnits) || 0;
+    return getPropertyUnitLabels(propertyStructure, count).map(unit => `${unit}/${street}`);
   };
 
   // Full step 1 validation
@@ -998,14 +988,16 @@ export function MultiStepPropertyForm({ onClose, onSuccess, property }: MultiSte
   };
 
   const getFullAddress = () => {
-    if (locationMode === 'choose') return location;
-    const parts = [streetNo, streetName, suburb, state, postCode].filter(Boolean);
+    if (locationMode === 'choose') return location.trim().replace(/,\s*$/, '');
+    const parts = [streetNo, streetName, suburb, state, postCode]
+      .map(p => p.trim().replace(/,\s*$/, ''))
+      .filter(Boolean);
     return parts.join(', ');
   };
 
   const getPropertyName = () => {
-    if (locationMode === 'choose') return location;
-    return `${streetNo} ${streetName}`.trim() || 'New Property';
+    if (locationMode === 'choose') return location.trim().replace(/,\s*$/, '');
+    return `${streetNo} ${streetName}`.trim().replace(/,\s*$/, '') || 'New Property';
   };
 
   const handleSubmit = async () => {

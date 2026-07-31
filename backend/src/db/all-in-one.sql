@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     date                    DATE         NOT NULL DEFAULT CURRENT_DATE,
     type                    VARCHAR(20)  NOT NULL CHECK (type IN ('income', 'expense')),
     category_name           VARCHAR(100),
+    unit_label              VARCHAR(50),
     transaction_source      VARCHAR(50)  DEFAULT 'Manual Entry'
                                 CHECK (transaction_source IN ('Manual Entry', 'OCR Upload', 'Bank Feed', 'Rental Summary')),
     status                  VARCHAR(20)  DEFAULT 'pending'

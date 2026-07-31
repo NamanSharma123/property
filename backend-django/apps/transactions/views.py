@@ -21,9 +21,10 @@ JOIN_EXTRAS = ('property', 'tenant', 'category')
 
 ALLOWED_UPDATE_FIELDS = [
     'description', 'amount', 'date', 'type', 'category_id', 'category_name',
-    'property_id', 'tenant_id', 'status', 'payment_method', 'reference_number',
-    'receipt_url', 'attachments', 'is_recurring', 'recurring_frequency',
-    'recurring_end_date', 'notes', 'is_tax_deductible', 'tax_category',
+    'unit_label', 'property_id', 'tenant_id', 'status', 'payment_method',
+    'reference_number', 'receipt_url', 'attachments', 'is_recurring',
+    'recurring_frequency', 'recurring_end_date', 'notes', 'is_tax_deductible',
+    'tax_category',
 ]
 
 DATE_FIELDS = {'date', 'recurring_end_date'}
@@ -91,6 +92,14 @@ class TransactionListView(ProtectedView):
         else:
             dup_qs = dup_qs.filter(Q(category_name='') | Q(category_name__isnull=True))
 
+        # Different units can legitimately have identical-looking transactions
+        # (e.g. the same rent amount on the same day for Unit A and Unit B).
+        dup_unit = data.get('unitLabel') or ''
+        if dup_unit:
+            dup_qs = dup_qs.filter(unit_label=dup_unit)
+        else:
+            dup_qs = dup_qs.filter(Q(unit_label='') | Q(unit_label__isnull=True))
+
         duplicate = dup_qs.first()
         if duplicate:
             return error_response(
@@ -109,6 +118,7 @@ class TransactionListView(ProtectedView):
             date=tx_date,
             type=data.get('type'),
             category_name=data.get('categoryName') or None,
+            unit_label=data.get('unitLabel') or None,
             transaction_source=data.get('transactionSource') or 'Manual Entry',
             status=data.get('status') or 'pending',
             payment_method=data.get('paymentMethod') or None,

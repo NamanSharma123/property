@@ -72,6 +72,9 @@ export async function addProperty(formData: FormData): Promise<{ success: boolea
     }
   }
 
+  // Strip a stray trailing comma so it doesn't get doubled when full_address is built
+  street = street.trim().replace(/,\s*$/, '');
+
   const addressObj = {
     street: street,
     city: city,
@@ -154,6 +157,9 @@ export async function updateProperty(
         streetUpdate = fullAddressUpdate.substring(0, cityIndex).replace(/,\s*$/, '').trim();
       }
     }
+
+    // Strip a stray trailing comma so it doesn't get doubled when full_address is built
+    streetUpdate = streetUpdate.trim().replace(/,\s*$/, '');
 
     const addressObj = {
       street: streetUpdate || '',
@@ -421,4 +427,33 @@ export function getOwnershipInfo(property: { ownership?: string; ownershipDetail
   const owner = details.owners?.[0];
   const ownership = owner?.ownership !== undefined ? parseFloat(String(owner.ownership)) : 100;
   return { typeLabel, ownerLabel: owner?.name ? `${owner.name} (${ownership.toFixed(2)}%)` : '' };
+}
+
+/**
+ * The unit labels a multi-unit property is split into — "A"/"B" for a duplex,
+ * "1".."N" for a block of units or rooming house, [] for a single dwelling.
+ * Mirrors the address preview shown on the property form (e.g. "A/41 Swanson
+ * St"), so a transaction's unit selector and the Unit Wise report agree on
+ * the same set of units without a separate per-unit table.
+ */
+export function getPropertyUnitLabels(propertyStructure: string, numberOfUnits: number): string[] {
+  if (propertyStructure === 'duplex') return ['A', 'B'];
+  if (propertyStructure === 'rooming-house' || propertyStructure === 'block-of-units') {
+    if (numberOfUnits >= 1 && numberOfUnits <= 20) {
+      return Array.from({ length: numberOfUnits }, (_, i) => String(i + 1));
+    }
+  }
+  return [];
+}
+
+/** Same as getPropertyUnitLabels, but reads propertyStructure/units off a saved Property record. */
+export function getUnitLabelsForProperty(property: { units?: number; ownershipDetails?: unknown; ownership_details?: unknown }): string[] {
+  let structure = 'single-dwelling';
+  try {
+    const raw = property.ownershipDetails ?? property.ownership_details;
+    const details = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) as { propertyStructure?: string } : null;
+    structure = details?.propertyStructure || structure;
+  } catch { /* ignore malformed ownership_details */ }
+
+  return getPropertyUnitLabels(structure, property.units || 0);
 }

@@ -18,6 +18,10 @@ class Transaction(TimeStampedModel):
     date = models.DateField()
     type = models.CharField(max_length=20)
     category_name = models.CharField(max_length=100, null=True, blank=True)
+    # Which unit within a multi-unit property (duplex/block-of-units/rooming-house)
+    # this transaction belongs to, e.g. "A" or "3" — matches the labels shown in
+    # the property form's address preview. Null for single-dwelling properties.
+    unit_label = models.CharField(max_length=50, null=True, blank=True)
     transaction_source = models.CharField(max_length=50, default='Manual Entry')
     status = models.CharField(max_length=20, default='pending')
     payment_method = models.CharField(max_length=30, null=True, blank=True)

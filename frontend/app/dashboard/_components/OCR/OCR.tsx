@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Upload, Download, Printer, MoreVertical, Trash2, Plus, ChevronUp, ChevronDown, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import { addMultipleTransactions } from '@/lib/transaction';
+import { getUnitLabelsForProperty } from '@/lib/property';
 import { processDocument, extractLineItemsForTransactions } from '@/lib/ocrService';
 import { documentsApi } from '@/lib/api';
 import { toast } from 'sonner';
@@ -48,7 +49,13 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   // Load properties using SWR hook
   const { properties, isLoading: isLoadingProperties } = usePropertiesSWR();
   const [selectedProperty, setSelectedProperty] = useState<string>('');
+  const [selectedUnit, setSelectedUnit] = useState<string>('');
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
+
+  // Units this property is split into (e.g. ["A", "B"] for a duplex) — [] for single dwellings.
+  const unitLabels = selectedProperty
+    ? getUnitLabelsForProperty(properties.find(p => p.id === selectedProperty) || {})
+    : [];
 
   // Came in from a specific property's page — pre-select it once properties load.
   useEffect(() => {
@@ -317,6 +324,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   // Filter line items when property is selected
   const handlePropertyChange = (propertyId: string) => {
     setSelectedProperty(propertyId);
+    setSelectedUnit('');
 
     // If we have extracted data, filter line items by selected property
     if (extractedData && propertyId) {
@@ -350,6 +358,12 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
     // Validate property selection
     if (!selectedProperty) {
       setError('Please select a property');
+      return;
+    }
+
+    // Multi-unit properties must record which unit these transactions belong to.
+    if (unitLabels.length > 0 && !selectedUnit) {
+      setError('Please select which unit this is for');
       return;
     }
 
@@ -431,6 +445,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         propertyName: property.name,
         propertyType: property.type || 'Residential',
         category: detail.category,
+        ...(selectedUnit ? { unitLabel: selectedUnit } : {}),
         amount: parseFloat(detail.amount) || 0,
         date: statementDateStr,
         transactionSource: 'OCR Upload' as const,
@@ -453,6 +468,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         setExtractedData(null);
         setDetails([{ id: '1', category: '', amount: '' }]);
         setSelectedProperty('');
+        setSelectedUnit('');
         setStatementDate(new Date());
         setStartDate(() => { const d = new Date(); d.setDate(1); return d; });
         setEndDate(new Date());
@@ -753,6 +769,26 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
                   required
                 />
               </div>
+
+              {unitLabels.length > 0 && (
+                <div>
+                  <Label htmlFor="select-unit" className="text-sm font-medium text-gray-700">
+                    Unit<span className="text-red-500">*</span>
+                  </Label>
+                  <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                    <SelectTrigger id="select-unit" className="mt-1.5">
+                      <SelectValue placeholder="Select Unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {unitLabels.map((unit) => (
+                        <SelectItem key={unit} value={unit}>
+                          Unit {unit}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {/* Row 2: Start Date & End Date */}
               <div className="grid grid-cols-2 gap-4">

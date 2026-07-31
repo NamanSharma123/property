@@ -2,11 +2,12 @@
 
 import React, { useState } from "react";
 
-import { Property } from "@/lib/property";
+import { Property, getUnitLabelsForProperty } from "@/lib/property";
 import { getTransactionsInRange } from "@/lib/transaction";
 import {
   buildAllPropertiesReport,
   buildIndividualPropertyReport,
+  buildUnitWiseReport,
   financialYearPeriod,
   customDatePeriod,
   monthPeriod,
@@ -74,19 +75,18 @@ export default function GenerateReports({
       return;
     }
 
-    if (property !== "all") {
-      const selectedProp = properties.find(p => p.id === property);
-      if (selectedProp) {
-        if (reportScope === "unit" && (!selectedProp.units || selectedProp.units <= 1)) {
-          if (!confirm(`Property "${selectedProp.name}" has only ${selectedProp.units || 1} unit. The Unit Wise report might not be useful. Continue?`)) {
-            return;
-          }
-        }
-      }
+    if (reportScope === "unit" && property === "all") {
+      alert("Please select a specific property to generate a Unit Wise report.");
+      return;
     }
 
-    if (reportScope === "unit") {
-      alert("Unit Wise reports aren't available yet — showing the Full Report instead.");
+    if (property !== "all" && reportScope === "unit") {
+      const selectedProp = properties.find(p => p.id === property);
+      if (selectedProp && getUnitLabelsForProperty(selectedProp).length === 0) {
+        if (!confirm(`Property "${selectedProp.name}" doesn't have multiple units set up. Showing the Full Report instead. Continue?`)) {
+          return;
+        }
+      }
     }
 
     if (duration === "custom") {
@@ -123,15 +123,32 @@ export default function GenerateReports({
         const transactions = await getTransactionsInRange(singlePeriod);
         onReportGenerated(buildAllPropertiesReport(properties, transactions, singlePeriod, reportKind), isOwnershipWise);
       } else {
-        // Individual Property Report: one column per period, for that property.
-        // Ownership Wise and Cost Base always show a single period (one
-        // column), even for Financial Year — the year-over-year comparison
-        // is specific to the plain Income & Expenditure Full Report.
         const selectedProp = properties.find(p => p.id === property);
         if (!selectedProp) {
           alert("Selected property not found.");
           return;
         }
+
+        // Unit Wise Report: one column per unit, always a single period —
+        // same reasoning as Ownership Wise below. Falls back to the plain
+        // Individual Property Report if the property has no units set up
+        // (the confirm() above already warned the user about that).
+        if (reportScope === "unit") {
+          const unitLabels = getUnitLabelsForProperty(selectedProp);
+          const transactions = await getTransactionsInRange({ propertyId: property, startDate: singlePeriod.startDate, endDate: singlePeriod.endDate });
+          onReportGenerated(
+            unitLabels.length > 0
+              ? buildUnitWiseReport(selectedProp, unitLabels, transactions, singlePeriod, reportKind)
+              : buildIndividualPropertyReport(selectedProp, transactions, [singlePeriod], reportKind),
+            false
+          );
+          return;
+        }
+
+        // Individual Property Report: one column per period, for that property.
+        // Ownership Wise and Cost Base always show a single period (one
+        // column), even for Financial Year — the year-over-year comparison
+        // is specific to the plain Income & Expenditure Full Report.
         const periods: ReportPeriod[] = (duration === "fy" && !isOwnershipWise && reportKind === "income-expenditure")
           ? getRecentFinancialYearLabels(3, year).map(financialYearPeriod)
           : [singlePeriod];
