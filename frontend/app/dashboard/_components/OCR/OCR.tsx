@@ -274,6 +274,11 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedProperty) {
+      toast.error('Please select a property first', { description: 'Choose which property this document belongs to before uploading.' });
+      event.target.value = ''; // let the same file be re-picked once a property is chosen
+      return;
+    }
     const file = event.target.files?.[0];
     if (file) {
       if (file.size > 10 * 1024 * 1024) { // 10MB limit
@@ -289,6 +294,10 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    if (!selectedProperty) {
+      toast.error('Please select a property first', { description: 'Choose which property this document belongs to before uploading.' });
+      return;
+    }
     const file = event.dataTransfer.files?.[0];
     if (file) {
       if (file.size > 10 * 1024 * 1024) { // 10MB limit
@@ -694,19 +703,31 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
                 </div>
               ) : (
                 <div
-                  className="border-2 border-dashed border-gray-500 rounded-lg p-16 text-center hover:border-gray-400 transition-colors cursor-pointer bg-[#4a4a4a] flex flex-col items-center justify-center w-full"
-                  onClick={() => document.getElementById('file-upload')?.click()}
+                  className={`border-2 border-dashed rounded-lg p-16 text-center transition-colors flex flex-col items-center justify-center w-full ${selectedProperty
+                    ? 'border-gray-500 hover:border-gray-400 cursor-pointer bg-[#4a4a4a]'
+                    : 'border-gray-600 cursor-not-allowed bg-[#3f3f3f] opacity-60'
+                    }`}
+                  onClick={() => {
+                    if (!selectedProperty) {
+                      toast.error('Please select a property first', { description: 'Choose which property this document belongs to before uploading.' });
+                      return;
+                    }
+                    document.getElementById('file-upload')?.click();
+                  }}
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
                 >
                   <Upload className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-                  <p className="text-gray-300 font-medium">Click or drag file to upload</p>
+                  <p className="text-gray-300 font-medium">
+                    {selectedProperty ? 'Click or drag file to upload' : 'Select a property first to enable upload'}
+                  </p>
                   <p className="text-gray-400 text-sm mt-2">(.jpg, .jpeg, .png, .pdf)</p>
                   <input
                     id="file-upload"
                     type="file"
                     accept=".jpg,.jpeg,.png,.pdf"
                     onChange={handleFileSelect}
+                    disabled={!selectedProperty}
                     className="hidden"
                   />
                 </div>
