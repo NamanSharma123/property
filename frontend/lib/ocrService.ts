@@ -200,6 +200,22 @@ export function extractLineItemsForTransactions(
                 return { numbers, street };
             };
 
+            // A bare base number (no "/") matches a "unit/base" number that
+            // shares that exact base — e.g. property "6 Runge St" (fn="6")
+            // must catch every unit of a rooming house billed as "1/6 Runge
+            // St".."9/6 Runge St" (sn="1/6".."9/6"). But two bare numbers, or
+            // two "unit/base" numbers, must match EXACTLY — otherwise "7"
+            // would wrongly swallow "7a", and "2/35" would wrongly swallow
+            // "2a/35", even though those denote genuinely distinct units.
+            const numbersMatch = (sn: string, fn: string): boolean => {
+                if (sn === fn) return true;
+                const snSlash = sn.includes('/');
+                const fnSlash = fn.includes('/');
+                if (snSlash && !fnSlash) return sn.split('/').pop() === fn;
+                if (fnSlash && !snSlash) return fn.split('/').pop() === sn;
+                return false;
+            };
+
             const sectionComponents = extractKeyComponents(sectionNameNormalized);
             const filterComponents = extractKeyComponents(filterNameNormalized);
 
@@ -222,7 +238,7 @@ export function extractLineItemsForTransactions(
 
                 if (sectionComponents.numbers.length && filterComponents.numbers.length) {
                     componentsMatch = sectionComponents.numbers.some(sn =>
-                        filterComponents.numbers.some(fn => sn === fn || sn.includes(fn) || fn.includes(sn))
+                        filterComponents.numbers.some(fn => numbersMatch(sn, fn))
                     );
                 } else {
                     // At least one is missing a number - allow matches based on street name alone
@@ -294,6 +310,33 @@ export function extractLineItemsForTransactions(
 
     console.log(`Extracted ${transactions.length} valid transactions for auto-save`);
     return transactions;
+}
+
+/**
+ * Guess which of a property's units (see getPropertyUnitLabels) a given
+ * extracted section address belongs to — e.g. "1/6 Runge St, Shepparton VIC
+ * 3630" -> "1" for a rooming-house property with units ["1".."9"], or "7A
+ * Sumner Street" -> "A" for a duplex with units ["A","B"]. Lets a rooming
+ * house statement (one PDF covering every unit) auto-fill each row's unit
+ * instead of forcing one unit for the whole upload. Returns '' when the
+ * address doesn't clearly indicate one of the given units.
+ */
+export function matchUnitLabel(address: string, unitLabels: string[]): string {
+    if (!address || unitLabels.length === 0) return '';
+    const firstWord = address.toLowerCase().trim().split(/[\s,]+/)[0] || '';
+    const m = firstWord.match(/^(\d+)([a-z]?)(?:[/-](\d+)([a-z]?))?$/);
+    if (!m) return '';
+
+    // "1/6" (unit/base) — block of units / rooming house, unit = leading number.
+    if (m[3]) {
+        return unitLabels.find(u => u === m[1]) || '';
+    }
+    // "7a" / "9b" (number + letter) — duplex, unit = the letter.
+    if (m[2]) {
+        const unit = m[2].toUpperCase();
+        return unitLabels.find(u => u.toUpperCase() === unit) || '';
+    }
+    return '';
 }
 
 /**

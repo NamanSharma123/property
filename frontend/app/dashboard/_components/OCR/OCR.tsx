@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Upload, Download, Printer, MoreVertical, Trash2, Plus, ChevronUp, ChevronDown, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import { addMultipleTransactions } from '@/lib/transaction';
 import { getUnitLabelsForProperty } from '@/lib/property';
-import { processDocument, extractLineItemsForTransactions } from '@/lib/ocrService';
+import { processDocument, extractLineItemsForTransactions, matchUnitLabel } from '@/lib/ocrService';
 import { documentsApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { usePropertiesSWR } from '@/hooks/usePropertiesSWR';
@@ -29,6 +29,10 @@ interface DetailRow {
   // description+category) doesn't collapse genuinely separate transactions
   // into "duplicates" of each other.
   description?: string;
+  // Which unit of a multi-unit property this row belongs to. Per-row (not
+  // one selector for the whole upload) because a single rooming-house
+  // statement covers every unit's transactions in one PDF.
+  unitLabel?: string;
 }
 
 interface OCRPageProps {
@@ -49,7 +53,6 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   // Load properties using SWR hook
   const { properties, isLoading: isLoadingProperties } = usePropertiesSWR();
   const [selectedProperty, setSelectedProperty] = useState<string>('');
-  const [selectedUnit, setSelectedUnit] = useState<string>('');
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
 
   // Units this property is split into (e.g. ["A", "B"] for a duplex) — [] for single dwellings.
@@ -257,6 +260,9 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
           category: t.category,
           amount: t.amount.toString(),
           description: t.description,
+          unitLabel: unitLabels.length > 0
+            ? matchUnitLabel((t.metadata.propertyName as string) || '', unitLabels)
+            : undefined,
         }));
         setDetails(newDetails);
         toast.success('OCR Complete', { description: `Extracted ${transactions.length} items` });
@@ -325,7 +331,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
     }
   };
 
-  const updateDetailRow = (id: string, field: 'category' | 'amount', value: string) => {
+  const updateDetailRow = (id: string, field: 'category' | 'amount' | 'unitLabel', value: string) => {
     setDetails(details.map(d => d.id === id ? { ...d, [field]: value } : d));
     setError('');
   };
@@ -333,12 +339,13 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   // Filter line items when property is selected
   const handlePropertyChange = (propertyId: string) => {
     setSelectedProperty(propertyId);
-    setSelectedUnit('');
 
     // If we have extracted data, filter line items by selected property
     if (extractedData && propertyId) {
-      const selectedPropertyName = properties.find(p => p.id === propertyId)?.name;
+      const selectedPropertyObj = properties.find(p => p.id === propertyId);
+      const selectedPropertyName = selectedPropertyObj?.name;
       if (selectedPropertyName) {
+        const propertyUnitLabels = getUnitLabelsForProperty(selectedPropertyObj || {});
         const transactions = extractLineItemsForTransactions(
           extractedData,
           propertyId,
@@ -352,6 +359,9 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
             category: t.category,
             amount: t.amount.toString(),
             description: t.description,
+            unitLabel: propertyUnitLabels.length > 0
+              ? matchUnitLabel((t.metadata.propertyName as string) || '', propertyUnitLabels)
+              : undefined,
           }));
           setDetails(newDetails);
           toast.success('Filtered by property', { description: `Showing ${transactions.length} items for ${selectedPropertyName}` });
@@ -370,16 +380,16 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
       return;
     }
 
-    // Multi-unit properties must record which unit these transactions belong to.
-    if (unitLabels.length > 0 && !selectedUnit) {
-      setError('Please select which unit this is for');
-      return;
-    }
-
     // Validate details
     const validDetails = details.filter(d => d.category && d.amount);
     if (validDetails.length === 0) {
       setError('Please add at least one detail with category and amount');
+      return;
+    }
+
+    // Multi-unit properties must record which unit each row belongs to.
+    if (unitLabels.length > 0 && validDetails.some(d => !d.unitLabel)) {
+      setError('Please select a unit for every row');
       return;
     }
 
@@ -454,7 +464,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         propertyName: property.name,
         propertyType: property.type || 'Residential',
         category: detail.category,
-        ...(selectedUnit ? { unitLabel: selectedUnit } : {}),
+        ...(detail.unitLabel ? { unitLabel: detail.unitLabel } : {}),
         amount: parseFloat(detail.amount) || 0,
         date: statementDateStr,
         transactionSource: 'OCR Upload' as const,
@@ -477,7 +487,6 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         setExtractedData(null);
         setDetails([{ id: '1', category: '', amount: '' }]);
         setSelectedProperty('');
-        setSelectedUnit('');
         setStatementDate(new Date());
         setStartDate(() => { const d = new Date(); d.setDate(1); return d; });
         setEndDate(new Date());
@@ -791,26 +800,6 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
                 />
               </div>
 
-              {unitLabels.length > 0 && (
-                <div>
-                  <Label htmlFor="select-unit" className="text-sm font-medium text-gray-700">
-                    Unit<span className="text-red-500">*</span>
-                  </Label>
-                  <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-                    <SelectTrigger id="select-unit" className="mt-1.5">
-                      <SelectValue placeholder="Select Unit" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {unitLabels.map((unit) => (
-                        <SelectItem key={unit} value={unit}>
-                          Unit {unit}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
               {/* Row 2: Start Date & End Date */}
               <div className="grid grid-cols-2 gap-4">
                 <DateInput
@@ -839,8 +828,9 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
               {/* Details Section */}
               <div className="border rounded-lg overflow-hidden">
                 {/* Header */}
-                <div className="grid grid-cols-[1fr,150px,40px] gap-2 px-4 py-3 bg-gray-50 border-b">
+                <div className={`grid gap-2 px-4 py-3 bg-gray-50 border-b ${unitLabels.length > 0 ? 'grid-cols-[1fr,110px,150px,40px]' : 'grid-cols-[1fr,150px,40px]'}`}>
                   <div className="text-sm font-medium text-gray-700">Details</div>
+                  {unitLabels.length > 0 && <div className="text-sm font-medium text-gray-700">Unit</div>}
                   <div className="text-sm font-medium text-gray-700 text-right">Amount</div>
                   <div></div>
                 </div>
@@ -853,7 +843,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
                 {/* Detail Rows */}
                 <div className="px-4 py-2 space-y-3 max-h-[200px] overflow-y-auto">
                   {details.map((detail) => (
-                    <div key={detail.id} className="grid grid-cols-[1fr,150px,40px] gap-2 items-center">
+                    <div key={detail.id} className={`grid gap-2 items-center ${unitLabels.length > 0 ? 'grid-cols-[1fr,110px,150px,40px]' : 'grid-cols-[1fr,150px,40px]'}`}>
                       <Select
                         value={detail.category}
                         onValueChange={(value) => updateDetailRow(detail.id, 'category', value)}
@@ -876,6 +866,23 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
                           ))}
                         </SelectContent>
                       </Select>
+                      {unitLabels.length > 0 && (
+                        <Select
+                          value={detail.unitLabel || ''}
+                          onValueChange={(value) => updateDetailRow(detail.id, 'unitLabel', value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Unit" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {unitLabels.map((unit) => (
+                              <SelectItem key={unit} value={unit}>
+                                Unit {unit}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                       <Input
                         type="number"
                         placeholder="0.00"

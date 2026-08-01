@@ -706,6 +706,23 @@ def _extract_owner_statement_format(words):
     if income_y is None and expenses_y is None:
         return transactions
 
+    # This layout states its property explicitly as "For property <address>"
+    # near the top of the page — far more reliable than falling back to a
+    # whole-document address scan, which can wander into an attached
+    # receipt/invoice's own address if one is bundled into the same PDF.
+    property_address = ''
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['text'] != 'For':
+            continue
+        same_line = sorted(
+            [w2 for w2 in words if abs(w2['top'] - w['top']) <= 2],
+            key=lambda x: x['x0']
+        )
+        idx = same_line.index(w)
+        if idx + 1 < len(same_line) and same_line[idx + 1]['text'] == 'property':
+            property_address = ' '.join(w2['text'] for w2 in same_line[idx + 2:]).strip().rstrip(',')
+            break
+
     AMT_X_MIN = 1050
     DESC_X_MAX = 930
 
@@ -760,6 +777,7 @@ def _extract_owner_statement_format(words):
             'description': clean[:120],
             'amount_in': val if col == 'in' else '',
             'amount_out': val if col == 'out' else '',
+            'property_address': property_address,
         })
 
     return transactions
@@ -817,6 +835,40 @@ def _extract_account_folio_format(words):
     DESC_X_MAX = 430
     _SKIP_FIRST = {'Total', 'Subtotal', 'Balance', 'GST', 'Account'}
 
+    # Each account/folio can cover several properties, each introduced by a
+    # left-aligned address line (e.g. "39 Sicilian Ave, Gordonvale QLD" or
+    # "9b Sicilian Ave, Gordonvale QLD") above its own line items — same
+    # section-header pattern as Format C's _extract_details_for_format, so a
+    # transaction's property is whichever header last appeared above it,
+    # not the agency's letterhead address at the top of the page.
+    property_headers = []
+    for w in sorted(words, key=lambda x: x['top']):
+        if w['top'] <= header_y or w['top'] >= stop_y:
+            continue
+        if _PROPERTY_HEADER_NUM_RE.match(w['text']) and w['x0'] < 80:
+            row_words = sorted(
+                [w2 for w2 in words
+                 if abs(w2['top'] - w['top']) <= 2 and w2['x0'] < DESC_X_MAX],
+                key=lambda x: x['x0']
+            )
+            # Only a genuine header when the number is the row's own first
+            # token — not, say, "555" inside "Use - 555 - Water Charges",
+            # which also happens to sit left of x0<80.
+            if not row_words or row_words[0]['x0'] < w['x0'] - 0.5:
+                continue
+            addr = ' '.join(w2['text'] for w2 in row_words).strip()
+            if addr and len(row_words) >= 2:
+                property_headers.append((w['top'], addr))
+
+    def _property_for_y(y):
+        prop = ''
+        for prop_y, addr in property_headers:
+            if prop_y < y:
+                prop = addr
+            else:
+                break
+        return prop
+
     for w in sorted(words, key=lambda x: x['top']):
         if w['top'] <= header_y or w['top'] >= stop_y:
             continue
@@ -866,6 +918,7 @@ def _extract_account_folio_format(words):
             'description': clean[:120],
             'amount_in': val if col == 'in' else '',
             'amount_out': val if col == 'out' else '',
+            'property_address': _property_for_y(amt_y),
         })
 
     return transactions
