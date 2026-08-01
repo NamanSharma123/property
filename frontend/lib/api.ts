@@ -612,6 +612,43 @@ export const documentsApi = {
     },
 };
 
+// Depreciation schedules API — upload() bypasses apiFetch for the same
+// multipart reason as documentsApi.upload.
+export const depreciationApi = {
+    async upload(file: File, propertyId: string): Promise<ApiResponse<{ schedule: Record<string, unknown> }>> {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('propertyId', propertyId);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/depreciation/upload`, {
+                method: 'POST',
+                headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+                body: formData,
+            });
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to upload depreciation schedule',
+            };
+        }
+    },
+
+    async getAll(propertyId: string): Promise<ApiResponse<{ schedules: Record<string, unknown>[] }>> {
+        return apiFetch(`/api/depreciation/schedules?propertyId=${encodeURIComponent(propertyId)}`);
+    },
+
+    async getOne(id: string): Promise<ApiResponse<{ schedule: Record<string, unknown> }>> {
+        return apiFetch(`/api/depreciation/schedule/${id}`);
+    },
+
+    async delete(id: string): Promise<ApiResponse<unknown>> {
+        return apiFetch(`/api/depreciation/schedule/${id}`, { method: 'DELETE' });
+    },
+};
+
 const api = {
     auth: authApi,
     properties: propertiesApi,
@@ -621,6 +658,7 @@ const api = {
     categories: categoriesApi,
     notifications: notificationsApi,
     documents: documentsApi,
+    depreciation: depreciationApi,
 };
 
 export default api;

@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'apps.categories',
     'apps.notifications',
     'apps.ocr',
+    'apps.depreciation',
 ]
 
 MIDDLEWARE = [

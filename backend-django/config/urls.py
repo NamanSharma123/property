@@ -36,6 +36,7 @@ urlpatterns = [
     path('api/', include('apps.categories.urls')),
     path('api/', include('apps.notifications.urls')),
     path('api/', include('apps.ocr.urls')),
+    path('api/', include('apps.depreciation.urls')),
     # Catch-all JSON 404, matching the Express notFound handler
     re_path(r'^.*$', not_found),
 ]

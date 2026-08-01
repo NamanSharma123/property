@@ -10,7 +10,9 @@ import {
     Plus,
     RotateCcw,
     Eye,
-    AlertCircle
+    AlertCircle,
+    Upload,
+    Loader2
 } from 'lucide-react';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { propertiesApi, transactionsApi, documentsApi } from '@/lib/api';
@@ -18,6 +20,16 @@ import { getLoanSummary, getBankLabel } from '@/lib/property';
 import { getTransactionsInRange } from '@/lib/transaction';
 import { buildIndividualPropertyReport, getRecentFinancialYearLabels, financialYearPeriod, type ReportData } from '@/lib/reports';
 import ReportOutput from '@/app/dashboard/_components/reports/ReportOutput';
+import {
+    getDepreciationSchedules,
+    uploadDepreciationSchedule,
+    currentFinancialYearEndDate,
+    yearForDate,
+    latestSchedule,
+    type DepreciationSchedule,
+} from '@/lib/depreciation';
+import DepreciationScheduleModal from '@/app/dashboard/_components/Depreciation/DepreciationScheduleModal';
+import { toast } from 'sonner';
 
 interface LoanDocument {
     name: string;
@@ -136,6 +148,10 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
     const [activeTab, setActiveTab] = useState('transaction');
     const [reportData, setReportData] = useState<ReportData | null>(null);
     const [isLoadingReport, setIsLoadingReport] = useState(false);
+    const [depreciationSchedules, setDepreciationSchedules] = useState<DepreciationSchedule[]>([]);
+    const [isLoadingDepreciation, setIsLoadingDepreciation] = useState(false);
+    const [isUploadingDepreciation, setIsUploadingDepreciation] = useState(false);
+    const [openDepreciationSchedule, setOpenDepreciationSchedule] = useState<DepreciationSchedule | null>(null);
 
     const openDocument = async (storedUrl: string) => {
         const result = await documentsApi.getViewUrl(storedUrl);
@@ -206,6 +222,47 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
             fetchData();
         }
     }, [propertyId]);
+
+    const loadDepreciationSchedules = async () => {
+        setIsLoadingDepreciation(true);
+        const data = await getDepreciationSchedules(propertyId);
+        setDepreciationSchedules(data);
+        setIsLoadingDepreciation(false);
+    };
+
+    useEffect(() => {
+        if (propertyId) loadDepreciationSchedules();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [propertyId]);
+
+    const handleDepreciationUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        setIsUploadingDepreciation(true);
+        const result = await uploadDepreciationSchedule(file, propertyId);
+        setIsUploadingDepreciation(false);
+
+        if (result.success && result.schedule) {
+            if (result.schedule.status === 'failed') {
+                toast.warning('Uploaded, but nothing could be extracted', {
+                    description: result.schedule.error_message || 'No depreciation table was recognised in this PDF.',
+                });
+            } else {
+                toast.success('Depreciation schedule uploaded', {
+                    description: `Extracted ${result.schedule.years.diminishing_value.length} financial year(s).`,
+                });
+            }
+            loadDepreciationSchedules();
+        } else {
+            toast.error('Upload failed', { description: result.error });
+        }
+    };
+
+    const latestDepreciationSchedule = latestSchedule(depreciationSchedules);
+    const currentFyDate = currentFinancialYearEndDate();
+    const currentFyDepreciation = yearForDate(latestDepreciationSchedule, currentFyDate, 'diminishing_value');
 
     // Individual Property Report — one column per financial year (current +
     // 2 prior), fetched fresh scoped to this property rather than reusing
@@ -499,13 +556,13 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                         <div className="grid grid-cols-3 gap-4">
                             <FinancialCard
                                 title="Division 40"
-                                value={0}
-                                tooltip="Division 40 depreciation"
+                                value={currentFyDepreciation ? parseFloat(currentFyDepreciation.division_40_amount) : 'N/A'}
+                                tooltip={`Division 40 depreciation for FY ending ${currentFyDate}${latestDepreciationSchedule ? '' : ' — no schedule uploaded'}`}
                             />
                             <FinancialCard
                                 title="Division 43"
-                                value={0}
-                                tooltip="Division 43 depreciation"
+                                value={currentFyDepreciation ? parseFloat(currentFyDepreciation.division_43_amount) : 'N/A'}
+                                tooltip={`Division 43 depreciation for FY ending ${currentFyDate}${latestDepreciationSchedule ? '' : ' — no schedule uploaded'}`}
                             />
                             <FinancialCard
                                 title="Purchase Cost"
@@ -1148,9 +1205,76 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                     )
                 }
 
+                {/* Depreciation tab — uploaded schedules for this property */}
+                {
+                    activeTab === 'depreciation' && (
+                        <div className="mt-6 bg-white rounded-xl border border-gray-200 overflow-hidden">
+                            <div className="p-6 border-b flex items-center justify-between">
+                                <h3 className="text-lg font-medium text-gray-900">Depreciation Reports</h3>
+                                <div>
+                                    <input
+                                        id="property-depreciation-upload"
+                                        type="file"
+                                        accept=".pdf"
+                                        onChange={handleDepreciationUpload}
+                                        className="hidden"
+                                        disabled={isUploadingDepreciation}
+                                    />
+                                    <button
+                                        type="button"
+                                        disabled={isUploadingDepreciation}
+                                        onClick={() => document.getElementById('property-depreciation-upload')?.click()}
+                                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-60"
+                                    >
+                                        {isUploadingDepreciation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                        Upload Depreciation Report
+                                    </button>
+                                </div>
+                            </div>
+
+                            {isLoadingDepreciation ? (
+                                <div className="p-8 text-center text-gray-500">Loading…</div>
+                            ) : depreciationSchedules.length === 0 ? (
+                                <div className="p-8 text-center">
+                                    <FileText className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+                                    <p className="text-gray-500 font-medium">No depreciation reports uploaded yet</p>
+                                    <p className="text-sm text-gray-400">Upload a quantity surveyor&apos;s PDF depreciation schedule for this property</p>
+                                </div>
+                            ) : (
+                                <div className="divide-y">
+                                    {depreciationSchedules.map(schedule => (
+                                        <button
+                                            key={schedule.id}
+                                            type="button"
+                                            onClick={() => schedule.status === 'parsed' && setOpenDepreciationSchedule(schedule)}
+                                            disabled={schedule.status !== 'parsed'}
+                                            className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 disabled:hover:bg-transparent disabled:opacity-60"
+                                        >
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-900">{schedule.file_name}</p>
+                                                <p className="text-xs text-gray-500">
+                                                    {schedule.provider || 'Unknown provider'} · Uploaded {new Date(schedule.created_at).toLocaleDateString()}
+                                                    {schedule.status === 'failed' && ' · Could not extract a schedule from this PDF'}
+                                                </p>
+                                            </div>
+                                            {schedule.status === 'parsed' && (
+                                                <span className="text-xs text-gray-500">{schedule.years.diminishing_value.length} year(s)</span>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )
+                }
+
+                {openDepreciationSchedule && (
+                    <DepreciationScheduleModal schedule={openDepreciationSchedule} onClose={() => setOpenDepreciationSchedule(null)} />
+                )}
+
                 {/* Other tabs placeholder */}
                 {
-                    activeTab !== 'transaction' && activeTab !== 'ownership' && activeTab !== 'document' && activeTab !== 'loan' && activeTab !== 'report' && (
+                    activeTab !== 'transaction' && activeTab !== 'ownership' && activeTab !== 'document' && activeTab !== 'loan' && activeTab !== 'report' && activeTab !== 'depreciation' && (
                         <div className="mt-6 bg-white rounded-xl border border-gray-200 p-8 text-center">
                             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <FileText className="w-8 h-8 text-gray-400" />
