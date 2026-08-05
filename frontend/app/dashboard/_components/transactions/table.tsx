@@ -204,6 +204,9 @@ export const TransactionsTable = ({ filters }: { filters: { fromDate: string; to
                 <SortIcon columnKey="categoryLabel" />
               </div>
             </TableHead>
+            <TableHead className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Details
+            </TableHead>
             <TableHead
               className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
               onClick={() => handleSort('transactionSource')}
@@ -246,7 +249,7 @@ export const TransactionsTable = ({ filters }: { filters: { fromDate: string; to
         <TableBody className="divide-y divide-gray-200">
           {paginatedTransactions.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="py-8 text-center text-gray-500">
+              <TableCell colSpan={8} className="py-8 text-center text-gray-500">
                 No transactions found
               </TableCell>
             </TableRow>
@@ -258,6 +261,21 @@ export const TransactionsTable = ({ filters }: { filters: { fromDate: string; to
                 </TableCell>
                 <TableCell className="py-4 px-4 whitespace-nowrap text-sm text-gray-500">
                   {transaction.categoryLabel}
+                </TableCell>
+                <TableCell className="py-4 px-4 whitespace-nowrap text-sm text-gray-500">
+                  <div className="flex flex-col">
+                    {transaction.unitLabel && (
+                      <span className="text-xs font-medium text-gray-700">Unit {transaction.unitLabel}</span>
+                    )}
+                    {transaction.description && (
+                      <span className="text-xs text-gray-400 max-w-[200px] truncate" title={transaction.description}>
+                        {transaction.description}
+                      </span>
+                    )}
+                    {!transaction.unitLabel && !transaction.description && (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="py-4 px-4 whitespace-nowrap text-sm text-gray-500">
                   {transaction.transactionSource}
