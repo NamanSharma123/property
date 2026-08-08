@@ -18,9 +18,11 @@ import type { ExtractedData } from '@/lib/ocrParser';
 import { format } from "date-fns";
 
 
-// Category value that flags "this upload is a full rental statement" rather
-// than a normal income/expense line — see the "Statement" category group and
-// hasDirectStatementRow below.
+// Category value that flags a row as belonging to a full rental statement
+// rather than being a normal income/expense line — see the "Statement"
+// category group and isStatementUploadMode below. Selecting it manually is
+// an override; normally isStatementUploadMode is driven by having uploaded
+// a file at all.
 const DIRECT_STATEMENT_CATEGORY = 'rental-statement-direct-upload';
 
 interface DetailRow {
@@ -38,22 +40,13 @@ interface DetailRow {
   // one selector for the whole upload) because a single rooming-house
   // statement covers every unit's transactions in one PDF.
   unitLabel?: string;
-  // This row's own transaction date (YYYY-MM-DD), used only when no row in
-  // the table is a DIRECT_STATEMENT_CATEGORY row — i.e. for manually added
-  // expenses/income that aren't tied to a shared statement period.
+  // This row's own transaction date (YYYY-MM-DD), used only outside
+  // statement-upload mode — i.e. for manually added expenses/income that
+  // aren't tied to a shared statement period.
   expenseDate?: string;
 }
 
 const todayDateStr = () => new Date().toISOString().split('T')[0];
-
-// A fresh row flagging "this upload is a direct rental statement" — see
-// DIRECT_STATEMENT_CATEGORY. No amount: it exists purely to switch the form
-// into shared-statement-date mode, not to record a transaction itself.
-const makeDirectStatementRow = (): DetailRow => ({
-  id: `direct-statement-${Date.now().toString()}${Math.random().toString().slice(2)}`,
-  category: DIRECT_STATEMENT_CATEGORY,
-  amount: '',
-});
 
 interface OCRPageProps {
   onBackClick?: () => void;
@@ -103,10 +96,14 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // True when at least one row is flagged as a direct rental-statement upload —
-  // in that mode the whole table shares the Statement/Start/End Date fields
-  // above instead of each row carrying its own Expense Date.
-  const hasDirectStatementRow = details.some(d => d.category === DIRECT_STATEMENT_CATEGORY);
+  // Statement-upload mode: a document was uploaded (whether or not OCR
+  // managed to pull dates out of it), or the user manually flagged a row as
+  // DIRECT_STATEMENT_CATEGORY. In this mode the whole table shares the
+  // Statement/Start/End Date fields above instead of each row carrying its
+  // own Expense Date — "expenses can be added in two ways: statement upload
+  // or manual expense entry", and the mode follows *how* the entry was
+  // started, not whether the OCR text-parsing heuristics found a date.
+  const isStatementUploadMode = Boolean(selectedFile) || details.some(d => d.category === DIRECT_STATEMENT_CATEGORY);
 
   // ... existing useEffects ...
 
@@ -238,8 +235,11 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
       // Populate dates if found. ocrParser already resolves the statement
       // period to earliest-date=start / latest-date=end, and prefers an
       // explicitly-labelled "Statement Date" section over the period's end
-      // date when the document has one.
-      let foundStatementDates = false;
+      // date when the document has one. If the document has no recognisable
+      // date text at all, these fields just keep their existing defaults —
+      // the user can fill them in by hand; statement mode itself is driven
+      // by having uploaded a file at all (see isStatementUploadMode), not by
+      // whether this regex/heuristic parsing succeeded.
       if (extractedData.statementPeriod) {
         const startObj = convertToDateObj(extractedData.statementPeriod.from);
         const endObj = convertToDateObj(extractedData.statementPeriod.to);
@@ -253,8 +253,6 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         } else if (endObj) {
           setStatementDate(endObj); // Fallback to end date ONLY if statement date is missing
         }
-
-        foundStatementDates = Boolean(startObj || endObj || statementObj);
       }
 
       // If property is already selected, filter by it; otherwise show all items
@@ -295,14 +293,8 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
             ? matchUnitLabel((t.metadata.propertyName as string) || '', unitLabels)
             : undefined,
         }));
-        // A statement period was found — flag this as a direct statement upload so
-        // every extracted row shares the Statement/Start/End Date fields above
-        // instead of each needing its own Expense Date.
-        setDetails(foundStatementDates ? [makeDirectStatementRow(), ...newDetails] : newDetails);
+        setDetails(newDetails);
         toast.success('OCR Complete', { description: `Extracted ${transactions.length} items` });
-      } else if (foundStatementDates) {
-        setDetails([makeDirectStatementRow(), { id: Date.now().toString(), category: '', amount: '', expenseDate: todayDateStr() }]);
-        toast.warning('No confidence items found', { description: 'Statement dates were detected — please enter line items manually' });
       } else {
         toast.warning('No confidence items found', { description: 'Please enter details manually' });
       }
@@ -400,12 +392,10 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
               ? matchUnitLabel((t.metadata.propertyName as string) || '', propertyUnitLabels)
               : undefined,
           }));
-          setDetails(hasDirectStatementRow ? [makeDirectStatementRow(), ...newDetails] : newDetails);
+          setDetails(newDetails);
           toast.success('Filtered by property', { description: `Showing ${transactions.length} items for ${selectedPropertyName}` });
         } else {
-          setDetails(hasDirectStatementRow
-            ? [makeDirectStatementRow(), { id: Date.now().toString(), category: '', amount: '', expenseDate: todayDateStr() }]
-            : [{ id: '1', category: 'rental-income', amount: '', expenseDate: todayDateStr() }]);
+          setDetails([{ id: '1', category: 'rental-income', amount: '', expenseDate: todayDateStr() }]);
           toast.info('No items found', { description: `No transactions found for ${selectedPropertyName} in this invoice` });
         }
       }
@@ -434,7 +424,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
     }
 
     // Outside direct-statement mode, every row needs its own Expense Date.
-    if (!hasDirectStatementRow && validDetails.some(d => !d.expenseDate)) {
+    if (!isStatementUploadMode && validDetails.some(d => !d.expenseDate)) {
       setError('Please enter an expense date for every row');
       return;
     }
@@ -514,13 +504,13 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         amount: parseFloat(detail.amount) || 0,
         // Direct-statement mode: every row is dated by the shared statement
         // period above. Otherwise each row carries its own Expense Date.
-        date: hasDirectStatementRow ? statementDateStr : detail.expenseDate!,
+        date: isStatementUploadMode ? statementDateStr : detail.expenseDate!,
         transactionSource: 'OCR Upload' as const,
         // Distinguishes otherwise-identical rows (e.g. several weekly rent
         // payments of the same amount) so the backend's duplicate-transaction
         // check doesn't reject legitimate separate transactions as repeats.
         ...(detail.description ? { description: detail.description } : {}),
-        ...(hasDirectStatementRow
+        ...(isStatementUploadMode
           ? { statementDate: statementDateStr, startDate: startDateStr, endDate: endDateStr }
           : {}),
         ...(receiptUrl ? { receiptUrl } : {}),
@@ -830,7 +820,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
           <CardContent className="p-6 bg-white">
             <div className="space-y-5">
               {/* Row 1: Property & Statement Date */}
-              <div className={`grid gap-4 ${hasDirectStatementRow ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <div className={`grid gap-4 ${isStatementUploadMode ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <div>
                   <Label htmlFor="select-property" className="text-sm font-medium text-gray-700">
                     Select Property<span className="text-red-500">*</span>
@@ -851,7 +841,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
 
                 {/* Only relevant for a direct rental-statement upload — see the
                     "Rental Statement Direct Upload" category and DateInput usage below. */}
-                {hasDirectStatementRow && (
+                {isStatementUploadMode && (
                   <DateInput
                     date={statementDate}
                     setDate={setStatementDate}
@@ -862,7 +852,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
               </div>
 
               {/* Row 2: Start Date & End Date — direct rental-statement upload only */}
-              {hasDirectStatementRow && (
+              {isStatementUploadMode && (
                 <div className="grid grid-cols-2 gap-4">
                   <DateInput
                     date={startDate}
@@ -910,7 +900,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
                     // Manual/other categories carry their own Expense Date + Description;
                     // a direct-statement upload instead relies on the shared Statement/
                     // Start/End Date fields above for every row.
-                    const showExpenseDate = Boolean(detail.category) && !hasDirectStatementRow;
+                    const showExpenseDate = Boolean(detail.category) && !isStatementUploadMode;
 
                     return (
                       <div key={detail.id} className="space-y-1.5">
