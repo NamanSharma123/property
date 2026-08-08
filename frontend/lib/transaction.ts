@@ -25,6 +25,12 @@ export interface Transaction {
 
 // Category mapping - organized by Income, Expense, and Cost
 export const categoryLabelsMap: Record<string, { label: string; type: 'income' | 'expense' | 'cost' }> = {
+  // Not a real income/expense line — flags an OCR upload as a full rental
+  // statement so its Start/End/Statement Date fields apply to every
+  // extracted line item. Included here only so any row saved under it still
+  // renders a sensible label instead of the raw slug.
+  'rental-statement-direct-upload': { label: 'Rental Statement Direct Upload', type: 'income' },
+
   // ============ INCOME CATEGORIES ============
   'rental-income': { label: 'Rental Income', type: 'income' },
   'other-rental-income': { label: 'Other rental related income', type: 'income' },

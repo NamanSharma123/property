@@ -18,6 +18,11 @@ import type { ExtractedData } from '@/lib/ocrParser';
 import { format } from "date-fns";
 
 
+// Category value that flags "this upload is a full rental statement" rather
+// than a normal income/expense line — see the "Statement" category group and
+// hasDirectStatementRow below.
+const DIRECT_STATEMENT_CATEGORY = 'rental-statement-direct-upload';
+
 interface DetailRow {
   id: string;
   category: string;
@@ -33,7 +38,22 @@ interface DetailRow {
   // one selector for the whole upload) because a single rooming-house
   // statement covers every unit's transactions in one PDF.
   unitLabel?: string;
+  // This row's own transaction date (YYYY-MM-DD), used only when no row in
+  // the table is a DIRECT_STATEMENT_CATEGORY row — i.e. for manually added
+  // expenses/income that aren't tied to a shared statement period.
+  expenseDate?: string;
 }
+
+const todayDateStr = () => new Date().toISOString().split('T')[0];
+
+// A fresh row flagging "this upload is a direct rental statement" — see
+// DIRECT_STATEMENT_CATEGORY. No amount: it exists purely to switch the form
+// into shared-statement-date mode, not to record a transaction itself.
+const makeDirectStatementRow = (): DetailRow => ({
+  id: `direct-statement-${Date.now().toString()}${Math.random().toString().slice(2)}`,
+  category: DIRECT_STATEMENT_CATEGORY,
+  amount: '',
+});
 
 interface OCRPageProps {
   onBackClick?: () => void;
@@ -78,10 +98,15 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   const [endDate, setEndDate] = useState<Date | undefined>(new Date());
 
   const [details, setDetails] = useState<DetailRow[]>([
-    { id: '1', category: 'rental-income', amount: '' },
+    { id: '1', category: 'rental-income', amount: '', expenseDate: todayDateStr() },
   ]);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // True when at least one row is flagged as a direct rental-statement upload —
+  // in that mode the whole table shares the Statement/Start/End Date fields
+  // above instead of each row carrying its own Expense Date.
+  const hasDirectStatementRow = details.some(d => d.category === DIRECT_STATEMENT_CATEGORY);
 
   // ... existing useEffects ...
 
@@ -210,7 +235,11 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         }
       };
 
-      // Populate dates if found
+      // Populate dates if found. ocrParser already resolves the statement
+      // period to earliest-date=start / latest-date=end, and prefers an
+      // explicitly-labelled "Statement Date" section over the period's end
+      // date when the document has one.
+      let foundStatementDates = false;
       if (extractedData.statementPeriod) {
         const startObj = convertToDateObj(extractedData.statementPeriod.from);
         const endObj = convertToDateObj(extractedData.statementPeriod.to);
@@ -224,6 +253,8 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         } else if (endObj) {
           setStatementDate(endObj); // Fallback to end date ONLY if statement date is missing
         }
+
+        foundStatementDates = Boolean(startObj || endObj || statementObj);
       }
 
       // If property is already selected, filter by it; otherwise show all items
@@ -264,8 +295,14 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
             ? matchUnitLabel((t.metadata.propertyName as string) || '', unitLabels)
             : undefined,
         }));
-        setDetails(newDetails);
+        // A statement period was found — flag this as a direct statement upload so
+        // every extracted row shares the Statement/Start/End Date fields above
+        // instead of each needing its own Expense Date.
+        setDetails(foundStatementDates ? [makeDirectStatementRow(), ...newDetails] : newDetails);
         toast.success('OCR Complete', { description: `Extracted ${transactions.length} items` });
+      } else if (foundStatementDates) {
+        setDetails([makeDirectStatementRow(), { id: Date.now().toString(), category: '', amount: '', expenseDate: todayDateStr() }]);
+        toast.warning('No confidence items found', { description: 'Statement dates were detected — please enter line items manually' });
       } else {
         toast.warning('No confidence items found', { description: 'Please enter details manually' });
       }
@@ -322,7 +359,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   };
 
   const addDetailRow = () => {
-    setDetails([...details, { id: Date.now().toString(), category: '', amount: '' }]);
+    setDetails([...details, { id: Date.now().toString(), category: '', amount: '', expenseDate: todayDateStr() }]);
   };
 
   const removeDetailRow = (id: string) => {
@@ -331,7 +368,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
     }
   };
 
-  const updateDetailRow = (id: string, field: 'category' | 'amount' | 'unitLabel', value: string) => {
+  const updateDetailRow = (id: string, field: 'category' | 'amount' | 'unitLabel' | 'expenseDate' | 'description', value: string) => {
     setDetails(details.map(d => d.id === id ? { ...d, [field]: value } : d));
     setError('');
   };
@@ -363,10 +400,12 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
               ? matchUnitLabel((t.metadata.propertyName as string) || '', propertyUnitLabels)
               : undefined,
           }));
-          setDetails(newDetails);
+          setDetails(hasDirectStatementRow ? [makeDirectStatementRow(), ...newDetails] : newDetails);
           toast.success('Filtered by property', { description: `Showing ${transactions.length} items for ${selectedPropertyName}` });
         } else {
-          setDetails([{ id: '1', category: 'rental-income', amount: '' }]);
+          setDetails(hasDirectStatementRow
+            ? [makeDirectStatementRow(), { id: Date.now().toString(), category: '', amount: '', expenseDate: todayDateStr() }]
+            : [{ id: '1', category: 'rental-income', amount: '', expenseDate: todayDateStr() }]);
           toast.info('No items found', { description: `No transactions found for ${selectedPropertyName} in this invoice` });
         }
       }
@@ -380,8 +419,9 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
       return;
     }
 
-    // Validate details
-    const validDetails = details.filter(d => d.category && d.amount);
+    // Validate details. The DIRECT_STATEMENT_CATEGORY row itself is a mode
+    // marker, not a transaction — it never gets saved.
+    const validDetails = details.filter(d => d.category && d.category !== DIRECT_STATEMENT_CATEGORY && d.amount);
     if (validDetails.length === 0) {
       setError('Please add at least one detail with category and amount');
       return;
@@ -390,6 +430,12 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
     // Multi-unit properties must record which unit each row belongs to.
     if (unitLabels.length > 0 && validDetails.some(d => !d.unitLabel)) {
       setError('Please select a unit for every row');
+      return;
+    }
+
+    // Outside direct-statement mode, every row needs its own Expense Date.
+    if (!hasDirectStatementRow && validDetails.some(d => !d.expenseDate)) {
+      setError('Please enter an expense date for every row');
       return;
     }
 
@@ -466,15 +512,17 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         category: detail.category,
         ...(detail.unitLabel ? { unitLabel: detail.unitLabel } : {}),
         amount: parseFloat(detail.amount) || 0,
-        date: statementDateStr,
+        // Direct-statement mode: every row is dated by the shared statement
+        // period above. Otherwise each row carries its own Expense Date.
+        date: hasDirectStatementRow ? statementDateStr : detail.expenseDate!,
         transactionSource: 'OCR Upload' as const,
         // Distinguishes otherwise-identical rows (e.g. several weekly rent
         // payments of the same amount) so the backend's duplicate-transaction
         // check doesn't reject legitimate separate transactions as repeats.
         ...(detail.description ? { description: detail.description } : {}),
-        statementDate: statementDateStr,
-        startDate: startDateStr,
-        endDate: endDateStr,
+        ...(hasDirectStatementRow
+          ? { statementDate: statementDateStr, startDate: startDateStr, endDate: endDateStr }
+          : {}),
         ...(receiptUrl ? { receiptUrl } : {}),
       }));
 
@@ -485,7 +533,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         setSelectedFile(null);
         setPreviewUrl(null);
         setExtractedData(null);
-        setDetails([{ id: '1', category: '', amount: '' }]);
+        setDetails([{ id: '1', category: '', amount: '', expenseDate: todayDateStr() }]);
         setSelectedProperty('');
         setStatementDate(new Date());
         setStartDate(() => { const d = new Date(); d.setDate(1); return d; });
@@ -532,7 +580,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
       setSelectedFile(null);
       setPreviewUrl(null);
       setExtractedData(null);
-      setDetails([{ id: '1', category: 'rental-income', amount: '' }]);
+      setDetails([{ id: '1', category: 'rental-income', amount: '', expenseDate: todayDateStr() }]);
       setSelectedProperty('');
     }
   };
@@ -584,6 +632,15 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   };
 
   const categories = [
+    {
+      group: 'Statement', items: [
+        // Not a real income/expense line — selecting it flags this upload as a
+        // full rental statement, so the shared Statement/Start/End Date fields
+        // (OCR-filled) apply to every row instead of each row needing its own
+        // Expense Date. See DIRECT_STATEMENT_CATEGORY usage below.
+        { value: DIRECT_STATEMENT_CATEGORY, label: 'Rental Statement Direct Upload' },
+      ]
+    },
     {
       group: 'Income', items: [
         { value: 'rental-income', label: 'Rental Income' },
@@ -773,7 +830,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
           <CardContent className="p-6 bg-white">
             <div className="space-y-5">
               {/* Row 1: Property & Statement Date */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className={`grid gap-4 ${hasDirectStatementRow ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <div>
                   <Label htmlFor="select-property" className="text-sm font-medium text-gray-700">
                     Select Property<span className="text-red-500">*</span>
@@ -792,30 +849,36 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
                   </Select>
                 </div>
 
-                <DateInput
-                  date={statementDate}
-                  setDate={setStatementDate}
-                  label="Statement Date"
-                  required
-                />
+                {/* Only relevant for a direct rental-statement upload — see the
+                    "Rental Statement Direct Upload" category and DateInput usage below. */}
+                {hasDirectStatementRow && (
+                  <DateInput
+                    date={statementDate}
+                    setDate={setStatementDate}
+                    label="Statement Date"
+                    required
+                  />
+                )}
               </div>
 
-              {/* Row 2: Start Date & End Date */}
-              <div className="grid grid-cols-2 gap-4">
-                <DateInput
-                  date={startDate}
-                  setDate={setStartDate}
-                  label="Start Date"
-                  required
-                />
+              {/* Row 2: Start Date & End Date — direct rental-statement upload only */}
+              {hasDirectStatementRow && (
+                <div className="grid grid-cols-2 gap-4">
+                  <DateInput
+                    date={startDate}
+                    setDate={setStartDate}
+                    label="Start Date"
+                    required
+                  />
 
-                <DateInput
-                  date={endDate}
-                  setDate={setEndDate}
-                  label="End Date"
-                  required
-                />
-              </div>
+                  <DateInput
+                    date={endDate}
+                    setDate={setEndDate}
+                    label="End Date"
+                    required
+                  />
+                </div>
+              )}
 
               {/* Row 3: Property Type (Read-only) */}
               <div>
@@ -831,7 +894,7 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
                 <div className={`grid gap-2 px-4 py-3 bg-gray-50 border-b ${unitLabels.length > 0 ? 'grid-cols-[1fr,110px,150px,40px]' : 'grid-cols-[1fr,150px,40px]'}`}>
                   <div className="text-sm font-medium text-gray-700">Details</div>
                   {unitLabels.length > 0 && <div className="text-sm font-medium text-gray-700">Unit</div>}
-                  <div className="text-sm font-medium text-gray-700 text-right">Amount</div>
+                  <div className="text-sm font-medium text-gray-700 text-right">Amount incl. GST</div>
                   <div></div>
                 </div>
 
@@ -842,64 +905,108 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
 
                 {/* Detail Rows */}
                 <div className="px-4 py-2 space-y-3 max-h-[200px] overflow-y-auto">
-                  {details.map((detail) => (
-                    <div key={detail.id} className={`grid gap-2 items-center ${unitLabels.length > 0 ? 'grid-cols-[1fr,110px,150px,40px]' : 'grid-cols-[1fr,150px,40px]'}`}>
-                      <Select
-                        value={detail.category}
-                        onValueChange={(value) => updateDetailRow(detail.id, 'category', value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((group) => (
-                            <div key={group.group}>
-                              <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
-                                {group.group}
-                              </div>
-                              {group.items.map((item) => (
-                                <SelectItem key={item.value} value={item.value}>
-                                  {item.label}
-                                </SelectItem>
+                  {details.map((detail) => {
+                    const isDirectStatementRow = detail.category === DIRECT_STATEMENT_CATEGORY;
+                    // Manual/other categories carry their own Expense Date + Description;
+                    // a direct-statement upload instead relies on the shared Statement/
+                    // Start/End Date fields above for every row.
+                    const showExpenseDate = Boolean(detail.category) && !hasDirectStatementRow;
+
+                    return (
+                      <div key={detail.id} className="space-y-1.5">
+                        <div className={`grid gap-2 items-center ${unitLabels.length > 0 ? 'grid-cols-[1fr,110px,150px,40px]' : 'grid-cols-[1fr,150px,40px]'}`}>
+                          <Select
+                            value={detail.category}
+                            onValueChange={(value) => updateDetailRow(detail.id, 'category', value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories.map((group) => (
+                                <div key={group.group}>
+                                  <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                                    {group.group}
+                                  </div>
+                                  {group.items.map((item) => (
+                                    <SelectItem key={item.value} value={item.value}>
+                                      {item.label}
+                                    </SelectItem>
+                                  ))}
+                                </div>
                               ))}
+                            </SelectContent>
+                          </Select>
+                          {unitLabels.length > 0 && (
+                            <Select
+                              value={detail.unitLabel || ''}
+                              onValueChange={(value) => updateDetailRow(detail.id, 'unitLabel', value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Unit" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {unitLabels.map((unit) => (
+                                  <SelectItem key={unit} value={unit}>
+                                    Unit {unit}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                          <Input
+                            type="number"
+                            placeholder="0.00"
+                            value={detail.amount}
+                            onChange={(e) => updateDetailRow(detail.id, 'amount', e.target.value)}
+                            className="text-right"
+                            disabled={isDirectStatementRow}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeDetailRow(detail.id)}
+                            className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+
+                        {isDirectStatementRow && (
+                          <p className="text-xs text-gray-500 pl-1">
+                            Flags this upload as a rental statement — the Statement/Start/End Date fields above apply to every item.
+                          </p>
+                        )}
+
+                        {showExpenseDate && (
+                          <div className="grid grid-cols-2 gap-2 pl-1">
+                            <div>
+                              <Label className="text-xs font-medium text-gray-500">
+                                Expense Date<span className="text-red-500">*</span>
+                              </Label>
+                              <Input
+                                type="date"
+                                max={todayDateStr()}
+                                value={detail.expenseDate || ''}
+                                onChange={(e) => updateDetailRow(detail.id, 'expenseDate', e.target.value)}
+                                className="mt-1"
+                              />
                             </div>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {unitLabels.length > 0 && (
-                        <Select
-                          value={detail.unitLabel || ''}
-                          onValueChange={(value) => updateDetailRow(detail.id, 'unitLabel', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Unit" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {unitLabels.map((unit) => (
-                              <SelectItem key={unit} value={unit}>
-                                Unit {unit}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      <Input
-                        type="number"
-                        placeholder="0.00"
-                        value={detail.amount}
-                        onChange={(e) => updateDetailRow(detail.id, 'amount', e.target.value)}
-                        className="text-right"
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeDetailRow(detail.id)}
-                        className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
+                            <div>
+                              <Label className="text-xs font-medium text-gray-500">Description (Optional)</Label>
+                              <Input
+                                type="text"
+                                placeholder="Description"
+                                value={detail.description || ''}
+                                onChange={(e) => updateDetailRow(detail.id, 'description', e.target.value)}
+                                className="mt-1"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Add Button */}
