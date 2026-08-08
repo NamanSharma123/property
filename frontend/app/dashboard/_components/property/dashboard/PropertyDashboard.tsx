@@ -12,7 +12,8 @@ import {
     Eye,
     AlertCircle,
     Upload,
-    Loader2
+    Loader2,
+    X
 } from 'lucide-react';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { propertiesApi, transactionsApi, documentsApi } from '@/lib/api';
@@ -82,6 +83,12 @@ interface Transaction {
     category_name?: string;
     transactionSource?: string;
     created_at?: string;
+    // These come straight through from the backend's `SELECT t.*` (see
+    // transactionController.js) even though this interface previously didn't
+    // name them — the View button surfaces them.
+    receipt_url?: string;
+    unit_label?: string;
+    status?: string;
 }
 
 interface PropertyDashboardProps {
@@ -127,6 +134,92 @@ const FinancialCard = ({
     );
 };
 
+// Transaction detail modal — opened by the transactions table's "View" button.
+const TransactionDetailModal = ({
+    transaction,
+    categoryLabel,
+    onClose,
+    onViewDocument,
+}: {
+    transaction: Transaction;
+    categoryLabel: string;
+    onClose: () => void;
+    onViewDocument: (storedUrl: string) => void;
+}) => {
+    const rows: { label: string; value: React.ReactNode }[] = [
+        { label: 'Category', value: categoryLabel },
+        { label: 'Type', value: transaction.type === 'income' ? 'Income' : transaction.type === 'cost' ? 'Cost' : 'Expense' },
+        {
+            label: 'Amount',
+            value: `${transaction.type === 'expense' ? '-' : ''}$${(parseFloat(String(transaction.amount)) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        },
+        { label: 'Date', value: new Date(transaction.date).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) },
+        { label: 'Transaction Source', value: transaction.transactionSource || 'Manual Entry' },
+        ...(transaction.unit_label ? [{ label: 'Unit', value: transaction.unit_label }] : []),
+        ...(transaction.description ? [{ label: 'Description', value: transaction.description }] : []),
+        ...(transaction.created_at
+            ? [{
+                label: 'Saved',
+                value: new Date(transaction.created_at).toLocaleString('en-AU', {
+                    timeZone: 'Australia/Sydney',
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true,
+                }),
+            }]
+            : []),
+    ];
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+            <div
+                className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between px-6 py-4 border-b">
+                    <h2 className="text-lg font-semibold text-gray-900">Transaction Details</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600" type="button">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="px-6 py-4 divide-y divide-gray-100">
+                    {rows.map((row) => (
+                        <div key={row.label} className="flex items-start justify-between gap-4 py-2.5 text-sm">
+                            <span className="text-gray-500">{row.label}</span>
+                            <span className="text-gray-900 font-medium text-right">{row.value}</span>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between">
+                    {transaction.receipt_url ? (
+                        <button
+                            type="button"
+                            onClick={() => onViewDocument(transaction.receipt_url!)}
+                            className="text-blue-600 hover:underline text-sm font-medium"
+                        >
+                            View Attached Document
+                        </button>
+                    ) : (
+                        <span className="text-xs text-gray-400">No document attached to this transaction</span>
+                    )}
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-4 py-1.5 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // Tab Component
 const Tab = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
     <button
@@ -152,6 +245,7 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
     const [isLoadingDepreciation, setIsLoadingDepreciation] = useState(false);
     const [isUploadingDepreciation, setIsUploadingDepreciation] = useState(false);
     const [openDepreciationSchedule, setOpenDepreciationSchedule] = useState<DepreciationSchedule | null>(null);
+    const [viewTransaction, setViewTransaction] = useState<Transaction | null>(null);
 
     const openDocument = async (storedUrl: string) => {
         const result = await documentsApi.getViewUrl(storedUrl);
@@ -773,7 +867,11 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                                                     {transaction.type === 'expense' ? '-' : ''}${(parseFloat(String(transaction.amount)) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
-                                                    <button className="text-blue-600 hover:text-blue-700 text-sm font-medium inline-flex items-center gap-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setViewTransaction(transaction)}
+                                                        className="text-blue-600 hover:text-blue-700 text-sm font-medium inline-flex items-center gap-1"
+                                                    >
                                                         <Eye size={14} />
                                                         View
                                                     </button>
@@ -1258,7 +1356,13 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                                                 </p>
                                             </div>
                                             {schedule.status === 'parsed' && (
-                                                <span className="text-xs text-gray-500">{schedule.years.diminishing_value.length} year(s)</span>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-xs text-gray-500">{schedule.years.diminishing_value.length} year(s)</span>
+                                                    <span className="text-blue-600 text-sm font-medium inline-flex items-center gap-1">
+                                                        <Eye size={14} />
+                                                        View
+                                                    </span>
+                                                </div>
                                             )}
                                         </button>
                                     ))}
@@ -1270,6 +1374,15 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
 
                 {openDepreciationSchedule && (
                     <DepreciationScheduleModal schedule={openDepreciationSchedule} onClose={() => setOpenDepreciationSchedule(null)} />
+                )}
+
+                {viewTransaction && (
+                    <TransactionDetailModal
+                        transaction={viewTransaction}
+                        categoryLabel={getCategoryLabel(viewTransaction.category_name)}
+                        onClose={() => setViewTransaction(null)}
+                        onViewDocument={openDocument}
+                    />
                 )}
 
                 {/* Other tabs placeholder */}
