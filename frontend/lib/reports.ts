@@ -2,6 +2,7 @@
 
 import { categoryLabelsMap, type Transaction } from './transaction';
 import { getOwnershipInfo } from './property';
+import { latestSchedule, type DepreciationSchedule } from './depreciation';
 
 // Minimal structural shape the report builders need — deliberately not the
 // full Property type, so callers with their own local property type (e.g.
@@ -146,7 +147,12 @@ function buildReportFromColumns(
   columns: ReportColumn[],
   transactions: Transaction[],
   mode: ReportData['mode'],
-  reportKind: ReportKind
+  reportKind: ReportKind,
+  // Keyed by propertyId. No transaction is ever created for the 'depreciation'
+  // category — it's sourced straight from each property's uploaded schedule
+  // instead (see the 'depreciation' special-case in buildRows below), same as
+  // the Division 40/43 dashboard tiles already do.
+  depreciationSchedulesByProperty: Record<string, DepreciationSchedule[]> = {}
 ): ReportData {
   const buildRows = (type: 'income' | 'expense' | 'cost'): ReportRow[] => {
     const categories = Object.entries(categoryLabelsMap).filter(([, info]) => info.type === type);
@@ -155,13 +161,29 @@ function buildReportFromColumns(
     return ordered.map(([category, info]) => {
       const amountsByColumn: Record<string, number> = {};
       for (const col of columns) {
-        amountsByColumn[col.key] = transactions
+        const transactionTotal = transactions
           .filter(t =>
             t.propertyId === col.propertyId && t.category === category && t.type === type &&
             t.date >= col.startDate && t.date <= col.endDate &&
             (col.unitLabel === undefined || t.unitLabel === col.unitLabel)
           )
           .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+        if (category === 'depreciation') {
+          // Pull this column's financial year straight from the property's
+          // latest parsed depreciation schedule, matched by financial_date
+          // (always the last day of a FY) falling inside the column's
+          // period. Falls back to the transaction total (normally 0, since
+          // nothing writes a 'depreciation' transaction) if no schedule
+          // covers this period.
+          const schedule = latestSchedule(depreciationSchedulesByProperty[col.propertyId] || []);
+          const yearRow = schedule?.years.diminishing_value.find(
+            y => y.financial_date >= col.startDate && y.financial_date <= col.endDate
+          );
+          amountsByColumn[col.key] = yearRow ? (parseFloat(yearRow.total_amount) || 0) : transactionTotal;
+        } else {
+          amountsByColumn[col.key] = transactionTotal;
+        }
       }
       return { category, label: info.label, amountsByColumn };
     });
@@ -210,7 +232,8 @@ export function buildAllPropertiesReport(
   properties: ReportProperty[],
   transactions: Transaction[],
   period: ReportPeriod,
-  reportKind: ReportKind = 'income-expenditure'
+  reportKind: ReportKind = 'income-expenditure',
+  depreciationSchedulesByProperty: Record<string, DepreciationSchedule[]> = {}
 ): ReportData {
   const columns: ReportColumn[] = properties.map(p => {
     const ownership = getOwnershipInfo(p);
@@ -227,7 +250,7 @@ export function buildAllPropertiesReport(
       purchasePrice: Number(p.purchase_price) || 0,
     };
   });
-  return buildReportFromColumns(columns, transactions, 'all-properties', reportKind);
+  return buildReportFromColumns(columns, transactions, 'all-properties', reportKind, depreciationSchedulesByProperty);
 }
 
 /** Individual Property Report: one column per period (financial years, or a single custom date range), for a single property. */
@@ -235,7 +258,8 @@ export function buildIndividualPropertyReport(
   property: ReportProperty,
   transactions: Transaction[],
   periods: ReportPeriod[],
-  reportKind: ReportKind = 'income-expenditure'
+  reportKind: ReportKind = 'income-expenditure',
+  depreciationSchedules: DepreciationSchedule[] = []
 ): ReportData {
   const ownership = getOwnershipInfo(property);
   const purchasePrice = Number(property.purchase_price) || 0;
@@ -251,7 +275,7 @@ export function buildIndividualPropertyReport(
     ownerLabel: ownership.ownerLabel,
     purchasePrice,
   }));
-  return buildReportFromColumns(columns, transactions, 'individual-property', reportKind);
+  return buildReportFromColumns(columns, transactions, 'individual-property', reportKind, { [property.id]: depreciationSchedules });
 }
 
 /**
@@ -266,7 +290,8 @@ export function buildUnitWiseReport(
   unitLabels: string[],
   transactions: Transaction[],
   period: ReportPeriod,
-  reportKind: ReportKind = 'income-expenditure'
+  reportKind: ReportKind = 'income-expenditure',
+  depreciationSchedules: DepreciationSchedule[] = []
 ): ReportData {
   const ownership = getOwnershipInfo(property);
   const purchasePrice = Number(property.purchase_price) || 0;
@@ -284,7 +309,7 @@ export function buildUnitWiseReport(
     purchasePrice,
     unitLabel: unit,
   }));
-  return buildReportFromColumns(columns, transactions, 'unit-wise', reportKind);
+  return buildReportFromColumns(columns, transactions, 'unit-wise', reportKind, { [property.id]: depreciationSchedules });
 }
 
 /** Widest startDate/endDate spanning every column, for a single transactions fetch. */

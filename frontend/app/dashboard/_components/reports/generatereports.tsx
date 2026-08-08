@@ -4,6 +4,7 @@ import React, { useState } from "react";
 
 import { Property, getUnitLabelsForProperty } from "@/lib/property";
 import { getTransactionsInRange } from "@/lib/transaction";
+import { getDepreciationSchedules, type DepreciationSchedule } from "@/lib/depreciation";
 import {
   buildAllPropertiesReport,
   buildIndividualPropertyReport,
@@ -16,6 +17,14 @@ import {
   type ReportPeriod,
   type ReportKind,
 } from "@/lib/reports";
+
+/** Fetches every property's depreciation schedules in parallel, keyed by propertyId — for buildAllPropertiesReport's per-column "Depreciation (from Schedule)" lookup. */
+async function fetchDepreciationSchedulesByProperty(propertyIds: string[]): Promise<Record<string, DepreciationSchedule[]>> {
+  const entries = await Promise.all(
+    propertyIds.map(async (id) => [id, await getDepreciationSchedules(id)] as const)
+  );
+  return Object.fromEntries(entries);
+}
 
 interface GenerateReportsProps {
   reportType: string;
@@ -120,14 +129,21 @@ export default function GenerateReports({
     try {
       if (property === "all") {
         // All Properties / Ownership Wise (all): one column per property, all for the same period.
-        const transactions = await getTransactionsInRange(singlePeriod);
-        onReportGenerated(buildAllPropertiesReport(properties, transactions, singlePeriod, reportKind), isOwnershipWise);
+        const [transactions, schedulesByProperty] = await Promise.all([
+          getTransactionsInRange(singlePeriod),
+          fetchDepreciationSchedulesByProperty(properties.map(p => p.id)),
+        ]);
+        onReportGenerated(buildAllPropertiesReport(properties, transactions, singlePeriod, reportKind, schedulesByProperty), isOwnershipWise);
       } else {
         const selectedProp = properties.find(p => p.id === property);
         if (!selectedProp) {
           alert("Selected property not found.");
           return;
         }
+
+        // "Depreciation (from Schedule)" is sourced straight from the
+        // property's uploaded schedule, not from transactions — see reports.ts.
+        const depreciationSchedules = await getDepreciationSchedules(property);
 
         // Unit Wise Report: one column per unit, always a single period —
         // same reasoning as Ownership Wise below. Falls back to the plain
@@ -138,8 +154,8 @@ export default function GenerateReports({
           const transactions = await getTransactionsInRange({ propertyId: property, startDate: singlePeriod.startDate, endDate: singlePeriod.endDate });
           onReportGenerated(
             unitLabels.length > 0
-              ? buildUnitWiseReport(selectedProp, unitLabels, transactions, singlePeriod, reportKind)
-              : buildIndividualPropertyReport(selectedProp, transactions, [singlePeriod], reportKind),
+              ? buildUnitWiseReport(selectedProp, unitLabels, transactions, singlePeriod, reportKind, depreciationSchedules)
+              : buildIndividualPropertyReport(selectedProp, transactions, [singlePeriod], reportKind, depreciationSchedules),
             false
           );
           return;
@@ -155,7 +171,7 @@ export default function GenerateReports({
         const startDate = periods.reduce((min, p) => (p.startDate < min ? p.startDate : min), periods[0].startDate);
         const endDate = periods.reduce((max, p) => (p.endDate > max ? p.endDate : max), periods[0].endDate);
         const transactions = await getTransactionsInRange({ propertyId: property, startDate, endDate });
-        onReportGenerated(buildIndividualPropertyReport(selectedProp, transactions, periods, reportKind), isOwnershipWise);
+        onReportGenerated(buildIndividualPropertyReport(selectedProp, transactions, periods, reportKind, depreciationSchedules), isOwnershipWise);
       }
     } catch {
       alert("Failed to generate report. Please try again.");

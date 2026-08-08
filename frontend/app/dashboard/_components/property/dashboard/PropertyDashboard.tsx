@@ -372,7 +372,7 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                 const startDate = periods.reduce((min, p) => (p.startDate < min ? p.startDate : min), periods[0].startDate);
                 const endDate = periods.reduce((max, p) => (p.endDate > max ? p.endDate : max), periods[0].endDate);
                 const reportTransactions = await getTransactionsInRange({ propertyId, startDate, endDate });
-                setReportData(buildIndividualPropertyReport(property, reportTransactions, periods));
+                setReportData(buildIndividualPropertyReport(property, reportTransactions, periods, 'income-expenditure', depreciationSchedules));
             } catch (error) {
                 console.error('Failed to build property report:', error);
             } finally {
@@ -381,6 +381,10 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
         };
 
         loadReport();
+        // depreciationSchedules deliberately omitted: it loads independently of this
+        // effect, and re-adding it would refire this guarded-by-!reportData effect
+        // on every schedules refetch instead of just once per report-tab visit.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, property, propertyId, reportData]);
 
     const handleResetFilters = () => {
