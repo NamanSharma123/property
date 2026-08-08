@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, FileText, Loader2 } from 'lucide-react';
+import { Upload, FileText, Loader2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { usePropertiesSWR } from '@/hooks/usePropertiesSWR';
 import {
@@ -168,9 +168,15 @@ export default function DepreciationPage() {
                       </p>
                     </div>
                     {schedule.status === 'parsed' && (
-                      <span className="text-xs text-gray-500">
-                        {schedule.years.diminishing_value.length} year(s)
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-gray-500">
+                          {schedule.years.diminishing_value.length} year(s)
+                        </span>
+                        <span className="text-blue-600 text-sm font-medium inline-flex items-center gap-1">
+                          <Eye size={14} />
+                          View
+                        </span>
+                      </div>
                     )}
                   </button>
                 ))}
