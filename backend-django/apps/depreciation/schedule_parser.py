@@ -238,13 +238,52 @@ def _detect_provider(text):
     return None
 
 
+# ─── Address signature (used to sanity-check the report against the property
+# it's being uploaded for — see DepreciationUploadView) ──────────────────────
+
+_STREET_SUFFIX_RE = (
+    r'(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Court|Ct|Place|Pl|Way|'
+    r'Boulevard|Blvd|Lane|Ln|Crescent|Cres|Close|Cl|Circuit|Cct|'
+    r'Grove|Gr|Terrace|Tce|Parade|Pde|Highway|Hwy|Square|Sq)'
+)
+# "Lot 384 (35) Hurley Street" / "1/33 Amy Street" / "85 Pioneer Drive" — the
+# unit/lot part before the street number is deliberately not captured, since
+# reports and the property record don't always agree on unit vs lot numbering
+# for what's physically the same address; only street number + name need to
+# agree for this to count as a match.
+_ADDRESS_SIGNATURE_RE = re.compile(
+    r'(?:Lot\s*\d+\s*)?\(?(\d{1,4}[A-Za-z]?)\)?\s*[/-]?\s*'
+    r'([A-Za-z][A-Za-z\' ]*?)\s+' + _STREET_SUFFIX_RE + r'\b',
+    re.IGNORECASE,
+)
+
+
+def address_signature(text):
+    """
+    (street_number, first_street_name_word, raw_matched_text) from the first
+    address-like text found, or None if nothing matched. The first two
+    (lowercased) fields are a lightweight, unit-number-agnostic fingerprint
+    for comparing a report's stated address against a property's stored
+    address — compare those two only; `raw_matched_text` is for display.
+    """
+    m = _ADDRESS_SIGNATURE_RE.search(text or '')
+    if not m:
+        return None
+    number = re.sub(r'[^0-9a-z]', '', m.group(1).lower())
+    name_words = m.group(2).strip().split()
+    if not number or not name_words:
+        return None
+    return number, name_words[0].lower(), re.sub(r'\s+', ' ', m.group(0)).strip()
+
+
 # ─── Top-level entry point ───────────────────────────────────────────────────
 
 def extract_depreciation_schedule(pdf_file):
     """
     `pdf_file` is a path or file-like object (e.g. io.BytesIO of the upload).
-    Returns {'diminishing_value': [...], 'prime_cost': [...], 'provider': str|None},
-    each row a dict of {financial_date, division_40_amount, division_43_amount, total_amount}.
+    Returns {'diminishing_value': [...], 'prime_cost': [...], 'provider': str|None,
+    'address': (street_number, street_name) | None}, each row a dict of
+    {financial_date, division_40_amount, division_43_amount, total_amount}.
     """
     import pdfplumber
 
@@ -258,6 +297,12 @@ def extract_depreciation_schedule(pdf_file):
         # document rather than just the first couple of pages.
         full_text = '\n'.join((p.extract_text() or '') for p in pdf.pages)
         provider = _detect_provider(full_text)
+        # Unlike provider, the property address reliably appears on the
+        # cover/intro page in every layout seen so far — restrict the scan to
+        # the first few pages so a QS's own office address (which can appear
+        # later, e.g. in a signature block) doesn't get picked up instead.
+        intro_text = '\n'.join((p.extract_text() or '') for p in pdf.pages[:3])
+        report_address = address_signature(intro_text)
 
         for page in pdf.pages:
             words = page.extract_words(keep_blank_chars=False)
@@ -305,4 +350,5 @@ def extract_depreciation_schedule(pdf_file):
         'diminishing_value': dv_rows,
         'prime_cost': pc_rows,
         'provider': provider,
+        'address': report_address,
     }
