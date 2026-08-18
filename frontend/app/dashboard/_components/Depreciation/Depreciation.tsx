@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, FileText, Loader2, Eye } from 'lucide-react';
+import { Upload, FileText, Loader2, Eye, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { usePropertiesSWR } from '@/hooks/usePropertiesSWR';
 import {
   getDepreciationSchedules,
   uploadDepreciationSchedule,
+  deleteDepreciationSchedule,
   currentFinancialYearEndDate,
   yearForDate,
   type DepreciationSchedule,
@@ -28,6 +29,7 @@ export default function DepreciationPage() {
   const [isLoadingSchedules, setIsLoadingSchedules] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [openSchedule, setOpenSchedule] = useState<DepreciationSchedule | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadSchedules = async (propertyId: string) => {
     if (!propertyId) {
@@ -67,6 +69,22 @@ export default function DepreciationPage() {
       loadSchedules(selectedProperty);
     } else {
       toast.error('Upload failed', { description: result.error });
+    }
+  };
+
+  const handleDelete = async (schedule: DepreciationSchedule) => {
+    if (!confirm(`Delete "${schedule.file_name}"? This can't be undone.`)) return;
+
+    setDeletingId(schedule.id);
+    const result = await deleteDepreciationSchedule(schedule.id);
+    setDeletingId(null);
+
+    if (result.success) {
+      toast.success('Depreciation report deleted');
+      if (openSchedule?.id === schedule.id) setOpenSchedule(null);
+      loadSchedules(selectedProperty);
+    } else {
+      toast.error('Failed to delete', { description: result.error });
     }
   };
 
@@ -153,32 +171,48 @@ export default function DepreciationPage() {
             ) : (
               <div className="divide-y">
                 {schedules.map(schedule => (
-                  <button
+                  <div
                     key={schedule.id}
-                    type="button"
-                    onClick={() => schedule.status === 'parsed' && setOpenSchedule(schedule)}
-                    disabled={schedule.status !== 'parsed'}
-                    className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 disabled:hover:bg-transparent disabled:opacity-60"
+                    className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50"
                   >
-                    <div>
+                    <button
+                      type="button"
+                      onClick={() => schedule.status === 'parsed' && setOpenSchedule(schedule)}
+                      disabled={schedule.status !== 'parsed'}
+                      className="flex-1 text-left disabled:cursor-default"
+                    >
                       <p className="text-sm font-medium text-gray-900">{schedule.file_name}</p>
                       <p className="text-xs text-gray-500">
                         {schedule.provider || 'Unknown provider'} · Uploaded {new Date(schedule.created_at).toLocaleDateString()}
                         {schedule.status === 'failed' && ' · Could not extract a schedule from this PDF'}
                       </p>
-                    </div>
-                    {schedule.status === 'parsed' && (
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-gray-500">
-                          {schedule.years.diminishing_value.length} year(s)
-                        </span>
-                        <span className="text-blue-600 text-sm font-medium inline-flex items-center gap-1">
+                    </button>
+                    <div className="flex items-center gap-4 pl-4">
+                      {schedule.status === 'parsed' && (
+                        <button
+                          type="button"
+                          onClick={() => setOpenSchedule(schedule)}
+                          className="text-blue-600 text-sm font-medium inline-flex items-center gap-1"
+                        >
                           <Eye size={14} />
                           View
-                        </span>
-                      </div>
-                    )}
-                  </button>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(schedule)}
+                        disabled={deletingId === schedule.id}
+                        className="text-red-500 hover:text-red-600 text-sm font-medium inline-flex items-center gap-1 disabled:opacity-60"
+                      >
+                        {deletingId === schedule.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                        Delete
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
