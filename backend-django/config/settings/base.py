@@ -39,6 +39,11 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.ocr',
     'apps.depreciation',
+    'apps.loans',
+    'apps.email_inbox',
+    'apps.support',
+    'apps.subscriptions',
+    'apps.admin_panel',
 ]
 
 MIDDLEWARE = [
@@ -142,6 +147,19 @@ DOCUMENTS_S3_REGION = config('DOCUMENTS_S3_REGION', default='ap-southeast-2')
 
 # Frontend base URL — used to build links inside emails (password reset, etc.)
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
+
+# Domain used to build each user's permanent inbound OCR-ingestion email
+# address (User.inbound_email). This only names the address — actually
+# receiving mail sent to it requires provisioning real AWS SES inbound
+# receipt rules + this domain's MX records, which is a later phase.
+INBOUND_EMAIL_DOMAIN = config('INBOUND_EMAIL_DOMAIN', default='properlymail.com.au')
+
+# Shared-secret gate on POST /api/email/inbound (apps.email_inbox) — the
+# placeholder auth for the SES-inbound webhook until it's replaced with
+# real SNS message-signature verification when that integration is wired.
+# Empty by default so the endpoint is closed (rejects everything) until a
+# secret is explicitly configured.
+INBOUND_EMAIL_WEBHOOK_SECRET = config('INBOUND_EMAIL_WEBHOOK_SECRET', default='')
 
 # Email (password reset). Falls back to Django's console backend (prints to
 # stdout instead of sending) when no SMTP password is configured, so local

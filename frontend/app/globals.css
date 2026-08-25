@@ -70,6 +70,30 @@
 }
 
 /* ========================
+   ADMIN PANEL THEME
+   Scoped to [data-admin-theme] so the user portal's shadcn tokens above are
+   untouched — only pages under /admin re-map --primary/--ring to indigo per
+   the admin panel's design spec (see Shelly_CRM/wireframe.html).
+   ======================== */
+[data-admin-theme] {
+  --primary: 243 75% 59%;             /* indigo-600 */
+  --primary-foreground: 210 40% 98%;
+  --ring: 243 75% 59%;
+  --sidebar-active-bg: 244 75% 97%;   /* indigo-50 */
+  --sidebar-active-fg: 243 75% 59%;
+}
+
+/* Matches this file's existing .dark convention (see :root / .dark above)
+   rather than inventing a new dark-mode selector. */
+.dark [data-admin-theme] {
+  --primary: 234 89% 74%;             /* indigo-400, lighter for dark surfaces */
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --ring: 234 89% 74%;
+  --sidebar-active-bg: 243 47% 20%;
+  --sidebar-active-fg: 234 89% 74%;
+}
+
+/* ========================
    UTILITY CLASSES FOR EDGE CASES
    ======================== */
 

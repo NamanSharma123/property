@@ -1,0 +1,666 @@
+<title>Shelly CRM — Property Portfolio & Accounting</title>
+<style>
+  :root{
+    --indigo:#4f46e5; --indigo-600:#4f46e5; --indigo-700:#4338ca; --indigo-50:#eef2ff; --indigo-100:#e0e7ff;
+    --amber:#f59e0b; --amber-50:#fffbeb; --amber-100:#fef3c7; --amber-600:#d97706;
+    --green:#16a34a; --green-50:#f0fdf4; --green-700:#15803d;
+    --red:#dc2626; --red-50:#fef2f2;
+    --ink:#111827; --g800:#1f2937; --g700:#374151; --g600:#4b5563; --g500:#6b7280; --g400:#9ca3af; --g300:#d1d5db;
+    --line:#f3f4f6; --border:#e5e7eb; --bg:#f9fafb; --panel:#fff;
+    --shadow:0 1px 2px rgba(0,0,0,.04),0 1px 3px rgba(0,0,0,.06);
+    --shadow-h:0 4px 12px rgba(0,0,0,.06),0 2px 4px rgba(0,0,0,.04);
+    --font:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5}
+  .num{font-variant-numeric:tabular-nums}
+  svg{display:block}
+  button{font-family:inherit;cursor:pointer;border:0;background:none}
+  ::-webkit-scrollbar{width:7px;height:7px}
+  ::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:9999px}
+
+  /* ---------- shell ---------- */
+  .app{display:flex;height:100vh;overflow:hidden}
+  .side{width:248px;flex:none;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:16px 0}
+  .brand{display:flex;align-items:center;gap:10px;padding:4px 18px 18px}
+  .brand .logo{width:38px;height:38px;border-radius:11px;background:var(--indigo);display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+  .brand b{font-size:15px;letter-spacing:-.01em;display:block;line-height:1.1}
+  .brand span{font-size:11px;color:var(--g400)}
+  .nav{flex:1;overflow-y:auto;padding:0 12px}
+  .nav .grp{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--g400);padding:14px 12px 4px}
+  .nav a{position:relative;display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;color:var(--g500);font-weight:500;font-size:13.5px;text-decoration:none;transition:background .12s,color .12s}
+  .nav a:hover{background:var(--bg);color:var(--g900,#111827)}
+  .nav a.on{background:var(--indigo-50);color:var(--indigo)}
+  .nav a.on::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:20px;border-radius:0 4px 4px 0;background:var(--indigo)}
+  .nav a svg{width:18px;height:18px;flex:none}
+  .side-foot{padding:12px 18px 2px;border-top:1px solid var(--line);margin:8px 12px 0;display:flex;align-items:center;gap:10px}
+  .avatar{width:34px;height:34px;border-radius:50%;background:var(--indigo-100);color:var(--indigo);font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex:none}
+
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .topbar{height:62px;flex:none;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 26px}
+  .topbar h1{font-size:16px;font-weight:600;margin:0}
+  .topbar .sub{font-size:12px;color:var(--g400);margin-top:1px}
+  .tb-right{display:flex;align-items:center;gap:10px}
+  .inbox-pill{display:inline-flex;align-items:center;gap:7px;background:var(--indigo-50);color:var(--indigo);border:1px solid var(--indigo-100);border-radius:9999px;padding:6px 12px;font-size:12px;font-weight:500}
+  .iconbtn{width:38px;height:38px;border-radius:10px;color:var(--g500);display:flex;align-items:center;justify-content:center;position:relative}
+  .iconbtn:hover{background:var(--bg)}
+  .iconbtn .dot{position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 0 2px #fff}
+  .content{flex:1;overflow-y:auto;padding:26px}
+  .wrap{max-width:1180px;margin:0 auto}
+
+  /* ---------- page header ---------- */
+  .phead{margin-bottom:22px}
+  .phead .ey{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--indigo);margin-bottom:6px}
+  .phead h2{font-size:22px;font-weight:600;letter-spacing:-.02em;margin:0}
+  .phead p{color:var(--g500);margin:6px 0 0;max-width:70ch}
+
+  /* ---------- primitives ---------- */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px}
+  .card.hl{border-color:var(--indigo-100);box-shadow:var(--shadow),0 0 0 1px var(--indigo-100) inset}
+  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+  .card-head h3{font-size:15px;font-weight:600;margin:0}
+  .card-head .cs{font-size:12px;color:var(--g400);margin-top:2px}
+  .link{font-size:12px;font-weight:500;color:var(--indigo);display:inline-flex;align-items:center;gap:4px;text-decoration:none}
+
+  .grid{display:grid;gap:20px}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g21{grid-template-columns:2fr 1fr}
+  .g12{grid-template-columns:1fr 2fr}
+  @media(max-width:900px){.g4{grid-template-columns:repeat(2,1fr)}.g3,.g2,.g21,.g12{grid-template-columns:1fr}}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:40px;padding:0 16px;border-radius:10px;font-weight:500;font-size:13.5px;background:var(--indigo);color:#fff;transition:background .12s}
+  .btn:hover{background:var(--indigo-700)}
+  .btn svg{width:16px;height:16px}
+  .btn.sm{height:34px;padding:0 12px;font-size:12.5px}
+  .btn.amber{background:var(--amber)}.btn.amber:hover{background:var(--amber-600)}
+  .btn.ghost{background:#fff;color:var(--g700);border:1px solid var(--border)}.btn.ghost:hover{background:var(--bg)}
+  .btn.soft{background:var(--indigo-50);color:var(--indigo)}.btn.soft:hover{background:var(--indigo-100)}
+
+  .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;border-radius:9999px;padding:3px 9px}
+  .pill.up{background:var(--green-50);color:var(--green-700)}
+  .pill.down{background:var(--red-50);color:var(--red)}
+  .pill.ok{background:var(--green-50);color:var(--green-700)}
+  .pill.warn{background:var(--amber-50);color:var(--amber-600)}
+  .pill.ind{background:var(--indigo-50);color:var(--indigo)}
+  .pill.mut{background:var(--bg);color:var(--g500);border:1px solid var(--border)}
+
+  /* ---------- stat ---------- */
+  .stat{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px}
+  .stat .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .stat .ic{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+  .stat .ic svg{width:20px;height:20px}
+  .ic.ind{background:var(--indigo-50);color:var(--indigo)}
+  .ic.amb{background:var(--amber-50);color:var(--amber-600)}
+  .ic.grn{background:var(--green-50);color:var(--green-700)}
+  .stat .val{font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1}
+  .stat .lab{font-size:13px;color:var(--g500);margin-top:8px}
+
+  /* form */
+  .field{margin-bottom:14px}
+  label.lb{display:block;font-size:12px;font-weight:500;color:var(--g600);margin-bottom:6px}
+  .inp,select.inp,textarea.inp{width:100%;height:42px;border:1px solid var(--border);border-radius:10px;padding:0 12px;font-family:inherit;font-size:13.5px;color:var(--g800);background:#fff;outline:none;transition:border .12s,box-shadow .12s}
+  textarea.inp{height:auto;padding:10px 12px;resize:vertical}
+  .inp:focus{border-color:#a5b4fc;box-shadow:0 0 0 3px var(--indigo-100)}
+  .inp-wrap{position:relative}
+  .inp-wrap .suf{position:absolute;right:8px;top:50%;transform:translateY(-50%)}
+
+  .seg{display:inline-flex;gap:4px;background:var(--bg);border-radius:9999px;padding:4px}
+  .seg button{font-size:12.5px;font-weight:500;color:var(--g500);border-radius:9999px;padding:6px 13px}
+  .seg button.on{background:#fff;color:var(--ink);box-shadow:var(--shadow)}
+
+  .chip{font-size:12px;font-weight:500;color:var(--g500);border:1px solid var(--border);border-radius:9999px;padding:6px 12px;background:#fff}
+  .chip.on{background:var(--indigo);border-color:var(--indigo);color:#fff}
+
+  table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+  table.tbl th{text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--g400);padding:8px 10px;border-bottom:1px solid var(--line)}
+  table.tbl td{padding:12px 10px;border-bottom:1px solid var(--line);color:var(--g600)}
+  table.tbl tr:last-child td{border-bottom:0}
+  table.tbl .r{text-align:right}
+  .tact{color:var(--g400);display:inline-flex;gap:12px}
+  .tact button:hover{color:var(--indigo)}
+  .tact .del:hover{color:var(--red)}
+
+  .prop-card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;transition:border .12s,box-shadow .12s}
+  .prop-card:hover{border-color:var(--indigo-100);box-shadow:var(--shadow-h)}
+  .prop-thumb{height:96px;background:linear-gradient(135deg,var(--indigo-50),var(--amber-50));display:flex;align-items:center;justify-content:center;color:var(--indigo);opacity:.9}
+  .prop-body{padding:14px}
+  .prop-body .nm{font-weight:600;font-size:14px}
+  .prop-body .ad{font-size:12px;color:var(--g400);margin-top:2px}
+  .prop-stats{display:flex;gap:16px;margin-top:12px;font-size:12px}
+  .prop-stats b{display:block;font-size:14px;color:var(--ink)}
+  .prop-stats span{color:var(--g400)}
+
+  .screen{display:none;animation:fade .18s ease}
+  .screen.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .note{border-left:3px solid var(--indigo);background:var(--indigo-50);border-radius:0 10px 10px 0;padding:11px 14px;font-size:12.5px;color:var(--g700)}
+  .note b{color:var(--indigo)}
+  .rtag{display:inline-block;font-size:10px;font-weight:700;color:var(--indigo);background:#fff;border:1px solid var(--indigo-100);border-radius:5px;padding:1px 6px;margin-left:4px}
+
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12.5px}
+  .flow .n{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--g700)}
+  .flow .n.dec{border-style:dashed;border-color:var(--indigo);color:var(--indigo)}
+  .flow .n.ok{background:var(--green-50);border-color:#bbf7d0;color:var(--green-700)}
+  .flow .n.rev{background:var(--amber-50);border-color:var(--amber-100);color:var(--amber-600)}
+  .flow .ar{color:var(--g400)}
+
+  .list-line{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .list-line:last-child{border-bottom:0}
+  .ll-ic{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
+  .ll-t{flex:1;min-width:0}
+  .ll-t .a{font-weight:500;font-size:13.5px}
+  .ll-t .b{font-size:12px;color:var(--g400)}
+</style>
+
+<div class="app">
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>
+      </div>
+      <div><b>Shelly CRM</b><span>Property portfolio</span></div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <div class="grp">Overview</div>
+      <a href="#" class="on" data-screen="dashboard" data-title="Dashboard" data-sub="Portfolio overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Dashboard</a>
+
+      <div class="grp">Portfolio</div>
+      <a href="#" data-screen="properties" data-title="Properties" data-sub="Your properties">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>Properties</a>
+      <a href="#" data-screen="transactions" data-title="Add / Amend Transaction" data-sub="Income & expenses">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Transactions</a>
+      <a href="#" data-screen="loans" data-title="Loans & Banking" data-sub="Manual loans + Basiq">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>Loans &amp; Banking</a>
+      <a href="#" data-screen="documents" data-title="Document Vault" data-sub="Stored in platform S3">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="M8 13h8M8 17h8"/></svg>Documents</a>
+
+      <div class="grp">Insights</div>
+      <a href="#" data-screen="cashflow" data-title="Property Cash Flow" data-sub="Per-property summary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>Cash Flow</a>
+      <a href="#" data-screen="reports" data-title="Reports" data-sub="P&amp;L, tax, categories">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Reports</a>
+
+      <div class="grp">Account</div>
+      <a href="#" data-screen="support" data-title="Support" data-sub="Tickets & enquiries">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6l-4 4V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></svg>Support</a>
+      <a href="#" data-screen="billing" data-title="Subscription" data-sub="Plans & payment">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>Subscription</a>
+
+      <div class="grp">Admin</div>
+      <a href="#" data-screen="review" data-title="Review Panel (OCR)" data-sub="Not-processed emails">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1 1 0 0 1 1.5 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>Review / OCR</a>
+      <a href="#" data-screen="admin" data-title="Admin Console" data-sub="Users, categories">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg>Admin Console</a>
+    </nav>
+
+    <div class="side-foot">
+      <div class="avatar">JD</div>
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:500">Jane Doe</div>
+        <div style="font-size:11px;color:var(--g400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">jane@example.com</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===================== MAIN ===================== -->
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1 id="pgTitle">Dashboard</h1>
+        <div class="sub" id="pgSub">Portfolio overview</div>
+      </div>
+      <div class="tb-right">
+        <span class="inbox-pill">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          jane92@inbox.shellycrm.com
+        </span>
+        <button class="iconbtn"><span class="dot"></span>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M3.3 15.3A1 1 0 0 0 4 17h16a1 1 0 0 0 .7-1.7C19.4 14 18 12.5 18 8A6 6 0 0 0 6 8c0 4.5-1.4 6-2.7 7.3"/></svg>
+        </button>
+        <div class="avatar">JD</div>
+      </div>
+    </header>
+
+    <div class="content"><div class="wrap">
+
+      <!-- ============ DASHBOARD ============ -->
+      <section class="screen on" id="s-dashboard">
+        <div class="phead">
+          <div class="ey">Overview</div>
+          <h2>Good morning, Jane 🏠</h2>
+          <p>Here's how your property portfolio is performing this financial year. <span class="rtag">R5</span><span class="rtag">R9</span></p>
+        </div>
+
+        <div class="grid g4" style="margin-bottom:20px">
+          <div class="stat">
+            <div class="top"><div class="ic ind"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div><span class="pill up">+1</span></div>
+            <div class="val num">6</div><div class="lab">Properties</div>
+          </div>
+          <div class="stat">
+            <div class="top"><div class="ic grn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg></div><span class="pill up">+12.4%</span></div>
+            <div class="val num">$18,240</div><div class="lab">Net cash flow (YTD)</div>
+          </div>
+          <div class="stat">
+            <div class="top"><div class="ic ind"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><span class="pill up">+8.1%</span></div>
+            <div class="val num">$62,900</div><div class="lab">Income (YTD)</div>
+          </div>
+          <div class="stat">
+            <div class="top"><div class="ic amb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 17h6v-6"/><path d="m22 17-8.5-8.5-5 5L2 7"/></svg></div><span class="pill down">-3.2%</span></div>
+            <div class="val num">$44,660</div><div class="lab">Expenses (YTD)</div>
+          </div>
+        </div>
+
+        <div class="grid g21" style="margin-bottom:20px">
+          <div class="card">
+            <div class="card-head">
+              <div><h3>Cash-flow trend</h3><div class="cs">Income vs expenses · last 8 months</div></div>
+              <div class="seg"><button class="on">FY</button><button>6M</button><button>Qtr</button></div>
+            </div>
+            <!-- SVG area chart -->
+            <svg viewBox="0 0 640 210" width="100%" height="210" preserveAspectRatio="none" style="overflow:visible">
+              <defs>
+                <linearGradient id="gInc" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4f46e5" stop-opacity=".22"/><stop offset="100%" stop-color="#4f46e5" stop-opacity="0"/></linearGradient>
+              </defs>
+              <g stroke="#f3f4f6" stroke-width="1"><line x1="0" y1="20" x2="640" y2="20"/><line x1="0" y1="70" x2="640" y2="70"/><line x1="0" y1="120" x2="640" y2="120"/><line x1="0" y1="170" x2="640" y2="170"/></g>
+              <path d="M0,150 C60,140 90,120 130,118 C180,116 210,90 260,95 C320,100 340,70 400,60 C460,50 490,66 540,52 C590,40 610,44 640,34 L640,190 L0,190 Z" fill="url(#gInc)"/>
+              <path d="M0,150 C60,140 90,120 130,118 C180,116 210,90 260,95 C320,100 340,70 400,60 C460,50 490,66 540,52 C590,40 610,44 640,34" fill="none" stroke="#4f46e5" stroke-width="2.5"/>
+              <path d="M0,175 C70,172 120,168 180,166 C260,163 300,158 380,156 C470,153 520,150 640,146" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="1 0"/>
+              <circle cx="640" cy="34" r="4" fill="#4f46e5" stroke="#fff" stroke-width="2"/>
+            </svg>
+            <div style="display:flex;gap:18px;margin-top:6px;font-size:12px;color:var(--g500)">
+              <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:9999px;background:var(--indigo)"></span>Income</span>
+              <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:9999px;background:var(--amber)"></span>Expenses</span>
+            </div>
+          </div>
+
+          <div class="card hl">
+            <div class="card-head"><div><h3>Needs review</h3><div class="cs">OCR could not auto-process</div></div><span class="pill warn">4 items</span></div>
+            <div class="list-line"><div class="ll-ic ic amb"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="ll-t"><div class="a">Bank_stmt_Aug.pdf</div><div class="b">low OCR confidence</div></div><span class="pill mut">Review</span></div>
+            <div class="list-line"><div class="ll-ic ic amb"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="ll-t"><div class="a">Settlement.pdf</div><div class="b">amount unclear</div></div><span class="pill mut">Review</span></div>
+            <div class="list-line"><div class="ll-ic ic amb"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div class="ll-t"><div class="a">Invoice_plumber.jpg</div><div class="b">no property match</div></div><span class="pill mut">Review</span></div>
+            <a class="link" style="margin-top:12px" href="#" onclick="go('review');return false">Open Review Panel →</a>
+          </div>
+        </div>
+
+        <div class="grid g2">
+          <div class="card">
+            <div class="card-head"><div><h3>Recent transactions</h3><div class="cs">Auto-created from your inbox &amp; manual entries</div></div><a class="link" href="#" onclick="go('transactions');return false">Add →</a></div>
+            <table class="tbl">
+              <tr><th>Detail</th><th>Property</th><th>Source</th><th class="r">Amount</th></tr>
+              <tr><td>Rent received</td><td>12 Oak St</td><td><span class="pill ok">OCR</span></td><td class="r num" style="color:var(--green-700)">+$2,400</td></tr>
+              <tr><td>Loan interest</td><td>4 Pine Ave</td><td><span class="pill ind">Basiq</span></td><td class="r num" style="color:var(--red)">−$980</td></tr>
+              <tr><td>Repairs — plumbing</td><td>12 Oak St</td><td><span class="pill mut">Manual</span></td><td class="r num" style="color:var(--red)">−$320</td></tr>
+              <tr><td>Rent received</td><td>4 Pine Ave</td><td><span class="pill ok">OCR</span></td><td class="r num" style="color:var(--green-700)">+$2,100</td></tr>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div><h3>How the OCR pipeline works</h3><div class="cs">Email → OCR → transaction</div></div></div>
+            <div class="flow" style="margin-bottom:12px">
+              <span class="n">📧 Unique inbox</span><span class="ar">→</span>
+              <span class="n">Read attachment</span><span class="ar">→</span>
+              <span class="n dec">Confident?</span>
+            </div>
+            <div class="flow" style="margin-bottom:14px">
+              <span class="ar">Yes →</span><span class="n ok">✓ Transaction created</span>
+              <span class="ar" style="margin-left:auto">No →</span><span class="n rev">⚑ Review Panel</span>
+            </div>
+            <div class="note"><b>R1 / R12</b> — Each user gets a unique inbound email. OCR templates cover bank, settlement, selling &amp; interest statements.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ PROPERTIES ============ -->
+      <section class="screen" id="s-properties">
+        <div class="phead">
+          <div class="ey">Portfolio</div>
+          <h2>Properties</h2>
+          <p>Manage your properties. Addresses auto-complete via the Postal API. <span class="rtag">R11</span><span class="rtag">R4</span></p>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:16px"><button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg>Add property</button></div>
+
+        <div class="grid g3" style="margin-bottom:20px">
+          <div class="prop-card">
+            <div class="prop-thumb"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
+            <div class="prop-body"><div class="nm">12 Oak Street</div><div class="ad">Richmond, VIC 3121</div>
+              <div class="prop-stats"><div><b class="num" style="color:var(--green-700)">+$1,100</b><span>net / mo</span></div><div><b class="num">1</b><span>loan</span></div></div></div>
+          </div>
+          <div class="prop-card">
+            <div class="prop-thumb"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
+            <div class="prop-body"><div class="nm">4 Pine Avenue</div><div class="ad">Carlton, VIC 3053</div>
+              <div class="prop-stats"><div><b class="num" style="color:var(--red)">−$240</b><span>net / mo</span></div><div><b class="num">1</b><span>loan</span></div></div></div>
+          </div>
+          <div class="prop-card">
+            <div class="prop-thumb"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></div>
+            <div class="prop-body"><div class="nm">88 Maple Road</div><div class="ad">Fitzroy, VIC 3065</div>
+              <div class="prop-stats"><div><b class="num" style="color:var(--green-700)">+$620</b><span>net / mo</span></div><div><b class="num">0</b><span>loans</span></div></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div><h3>Add a property</h3><div class="cs">Start typing the address — Postal API fills the rest</div></div></div>
+          <div class="grid g2">
+            <div>
+              <div class="field"><label class="lb">Address lookup <span class="rtag">R11</span></label>
+                <div class="inp-wrap"><input class="inp" placeholder="Start typing an address…" value="12 Oak St"><span class="suf pill ind">🔎 Postal</span></div>
+              </div>
+              <div class="grid g2">
+                <div class="field"><label class="lb">Suburb</label><input class="inp" value="Richmond"></div>
+                <div class="field"><label class="lb">Postcode</label><input class="inp" value="3121"></div>
+              </div>
+            </div>
+            <div>
+              <div class="grid g2">
+                <div class="field"><label class="lb">Property type</label><select class="inp"><option>Residential</option><option>Commercial</option></select></div>
+                <div class="field"><label class="lb">Purchase date</label><input class="inp" type="text" value="2021-06-14"></div>
+              </div>
+              <div class="field"><label class="lb">Purchase price</label><div class="inp-wrap"><input class="inp" style="padding-left:26px" value="720,000"><span style="position:absolute;left:12px;top:11px;color:var(--g400)">$</span></div></div>
+              <button class="btn" style="width:100%">Save property</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TRANSACTIONS ============ -->
+      <section class="screen" id="s-transactions">
+        <div class="phead">
+          <div class="ey">Portfolio</div>
+          <h2>Add / amend transaction</h2>
+          <p>Date fields adapt to the entry type — a single date for expenses, a received date for income, start + frequency for recurring. <span class="rtag">R7</span></p>
+        </div>
+        <div class="grid g12">
+          <div class="card" style="height:fit-content">
+            <div class="card-head"><h3>Entry type</h3></div>
+            <div class="seg" style="width:100%;justify-content:space-between">
+              <button class="on" onclick="txType(this,'income')">Income</button>
+              <button onclick="txType(this,'expense')">Expense</button>
+              <button onclick="txType(this,'recurring')">Recurring</button>
+            </div>
+            <div class="note" style="margin-top:14px"><b>R7</b> — Notice the date fields on the right change as you switch entry type.</div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div><h3 id="txHeading">New income</h3><div class="cs">Fill the fields and save</div></div></div>
+            <div class="grid g2">
+              <div class="field"><label class="lb">Property</label><select class="inp"><option>12 Oak Street</option><option>4 Pine Avenue</option><option>88 Maple Road</option></select></div>
+              <div class="field"><label class="lb">Category</label><select class="inp"><option>Rent</option><option>Repairs</option><option>Interest</option><option>Insurance</option></select></div>
+              <div class="field"><label class="lb">Amount</label><div class="inp-wrap"><input class="inp" style="padding-left:26px" value="2,400"><span style="position:absolute;left:12px;top:11px;color:var(--g400)">$</span></div></div>
+              <div class="field" id="txDates"><!-- injected by JS --></div>
+            </div>
+            <div class="field"><label class="lb">Notes</label><textarea class="inp" rows="2" placeholder="Optional note…"></textarea></div>
+            <button class="btn">Save transaction</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ LOANS ============ -->
+      <section class="screen" id="s-loans">
+        <div class="phead">
+          <div class="ey">Portfolio</div>
+          <h2>Loans &amp; banking</h2>
+          <p>Enter loans manually and link each to a property, then connect the Basiq open-banking API to auto-sync repayments &amp; interest. <span class="rtag">R4</span></p>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:16px"><button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg>Add loan</button></div>
+        <div class="grid g21">
+          <div class="card">
+            <div class="card-head"><div><h3>Your loans</h3><div class="cs">Each loan is linked to a property</div></div></div>
+            <table class="tbl">
+              <tr><th>Lender</th><th>Property</th><th>Rate</th><th class="r">Balance</th><th></th></tr>
+              <tr><td>Westpac</td><td>12 Oak St</td><td>5.8%</td><td class="r num">$540,000</td><td class="r"><span class="pill ok">Basiq ✓</span></td></tr>
+              <tr><td>ANZ</td><td>4 Pine Ave</td><td>6.1%</td><td class="r num">$410,000</td><td class="r"><span class="pill mut">Manual</span></td></tr>
+            </table>
+          </div>
+          <div class="card hl">
+            <div class="card-head"><div><h3>Connect your bank</h3><div class="cs">Auto-sync via Basiq</div></div></div>
+            <div style="text-align:center;padding:14px 0">
+              <div class="ic ind" style="width:52px;height:52px;margin:0 auto 12px;border-radius:14px"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg></div>
+              <p style="color:var(--g500);font-size:13px;margin:0 0 14px">Securely link your bank to pull loan repayments and interest automatically.</p>
+              <button class="btn" style="width:100%">Connect with Basiq</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ DOCUMENTS ============ -->
+      <section class="screen" id="s-documents">
+        <div class="phead">
+          <div class="ey">Portfolio</div>
+          <h2>Document vault</h2>
+          <p>Uploads and statements are stored in the platform S3 bucket. Click <b>View</b> to open the file and see when &amp; where it was uploaded. <span class="rtag">R3</span></p>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:16px"><button class="btn ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>Upload</button></div>
+        <div class="card">
+          <table class="tbl">
+            <tr><th>Document</th><th>Property</th><th>Source</th><th>Uploaded</th><th class="r">Action</th></tr>
+            <tr><td>Bank_stmt_Aug.pdf</td><td>12 Oak St</td><td><span class="pill ok">Email OCR</span></td><td>09 Aug 2026 · S3</td><td class="r"><button class="link">👁 View</button></td></tr>
+            <tr><td>Settlement_statement.pdf</td><td>88 Maple Rd</td><td><span class="pill mut">Manual</span></td><td>07 Aug 2026 · S3</td><td class="r"><button class="link">👁 View</button></td></tr>
+            <tr><td>Interest_statement.pdf</td><td>4 Pine Ave</td><td><span class="pill ok">Email OCR</span></td><td>03 Aug 2026 · S3</td><td class="r"><button class="link">👁 View</button></td></tr>
+            <tr><td>Invoice_plumber.jpg</td><td>12 Oak St</td><td><span class="pill mut">Manual</span></td><td>01 Aug 2026 · S3</td><td class="r"><button class="link">👁 View</button></td></tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ CASH FLOW ============ -->
+      <section class="screen" id="s-cashflow">
+        <div class="phead">
+          <div class="ey">Insights</div>
+          <h2>Property cash-flow summary</h2>
+          <p>Income minus expenses and loan repayments, broken down per property. <span class="rtag">R9</span></p>
+        </div>
+        <div class="grid g21">
+          <div class="card">
+            <div class="card-head"><div><h3>Net cash flow by property</h3><div class="cs">This financial year</div></div><div class="seg"><button class="on">FY26</button><button>FY25</button></div></div>
+            <!-- bar chart -->
+            <svg viewBox="0 0 640 220" width="100%" height="220">
+              <g stroke="#f3f4f6" stroke-width="1"><line x1="40" y1="20" x2="640" y2="20"/><line x1="40" y1="70" x2="640" y2="70"/><line x1="40" y1="120" x2="640" y2="120"/><line x1="40" y1="170" x2="640" y2="170"/></g>
+              <line x1="40" y1="120" x2="640" y2="120" stroke="#d1d5db" stroke-width="1"/>
+              <g>
+                <rect x="90"  y="40"  width="70" height="80"  rx="6" fill="#4f46e5"/>
+                <rect x="250" y="120" width="70" height="45"  rx="6" fill="#f59e0b"/>
+                <rect x="410" y="70"  width="70" height="50"  rx="6" fill="#4f46e5"/>
+                <rect x="560" y="88"  width="60" height="32"  rx="6" fill="#4f46e5"/>
+              </g>
+              <g font-size="11" fill="#9ca3af"><text x="105" y="185">12 Oak</text><text x="262" y="185">4 Pine</text><text x="418" y="185">88 Maple</text><text x="565" y="185">Others</text></g>
+            </svg>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Summary</h3></div>
+            <table class="tbl">
+              <tr><th>Property</th><th class="r">Net</th></tr>
+              <tr><td>12 Oak St</td><td class="r num" style="color:var(--green-700)">+$13,200</td></tr>
+              <tr><td>4 Pine Ave</td><td class="r num" style="color:var(--red)">−$2,880</td></tr>
+              <tr><td>88 Maple Rd</td><td class="r num" style="color:var(--green-700)">+$7,440</td></tr>
+              <tr><td><b>Portfolio</b></td><td class="r num" style="color:var(--green-700)"><b>+$18,240</b></td></tr>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ REPORTS ============ -->
+      <section class="screen" id="s-reports">
+        <div class="phead">
+          <div class="ey">Insights</div>
+          <h2>Reports</h2>
+          <p>Profit &amp; loss, expense-by-category, and tax-ready exports. <span class="rtag">R5</span><span class="rtag">R13</span></p>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+          <span class="chip on">P&amp;L</span><span class="chip">By category</span><span class="chip">Tax summary</span>
+          <span style="flex:1"></span><button class="btn ghost sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>Export</button>
+        </div>
+        <div class="grid g2">
+          <div class="card">
+            <div class="card-head"><h3>Expenses by category</h3></div>
+            <svg viewBox="0 0 360 200" width="100%" height="200">
+              <g transform="translate(90,100)">
+                <circle r="70" fill="none" stroke="#eef2ff" stroke-width="26"/>
+                <circle r="70" fill="none" stroke="#4f46e5" stroke-width="26" stroke-dasharray="180 440" transform="rotate(-90)"/>
+                <circle r="70" fill="none" stroke="#f59e0b" stroke-width="26" stroke-dasharray="110 440" stroke-dashoffset="-180" transform="rotate(-90)"/>
+                <circle r="70" fill="none" stroke="#a5b4fc" stroke-width="26" stroke-dasharray="80 440" stroke-dashoffset="-290" transform="rotate(-90)"/>
+              </g>
+              <g font-size="12" fill="#4b5563">
+                <rect x="215" y="55" width="10" height="10" rx="2" fill="#4f46e5"/><text x="232" y="64">Interest 41%</text>
+                <rect x="215" y="85" width="10" height="10" rx="2" fill="#f59e0b"/><text x="232" y="94">Repairs 25%</text>
+                <rect x="215" y="115" width="10" height="10" rx="2" fill="#a5b4fc"/><text x="232" y="124">Insurance 18%</text>
+                <rect x="215" y="145" width="10" height="10" rx="2" fill="#eef2ff" stroke="#e5e7eb"/><text x="232" y="154">Other 16%</text>
+              </g>
+            </svg>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Profit &amp; loss</h3><div class="cs">FY26</div></div>
+            <table class="tbl">
+              <tr><th>Line</th><th class="r">Amount</th></tr>
+              <tr><td>Rental income</td><td class="r num">$62,900</td></tr>
+              <tr><td>Loan interest</td><td class="r num" style="color:var(--red)">−$18,300</td></tr>
+              <tr><td>Repairs &amp; maintenance</td><td class="r num" style="color:var(--red)">−$11,200</td></tr>
+              <tr><td>Insurance &amp; rates</td><td class="r num" style="color:var(--red)">−$15,160</td></tr>
+              <tr><td><b>Net profit</b></td><td class="r num" style="color:var(--green-700)"><b>+$18,240</b></td></tr>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SUPPORT ============ -->
+      <section class="screen" id="s-support">
+        <div class="phead">
+          <div class="ey">Account</div>
+          <h2>Support</h2>
+          <p>Raise a support ticket — your enquiry is delivered straight to the team's email. <span class="rtag">R8</span></p>
+        </div>
+        <div class="grid g21">
+          <div class="card">
+            <div class="card-head"><h3>New ticket</h3></div>
+            <div class="field"><label class="lb">Subject</label><input class="inp" placeholder="Briefly, what's up?"></div>
+            <div class="field"><label class="lb">Category</label><select class="inp"><option>Billing</option><option>OCR / transactions</option><option>Bug report</option><option>Feature request</option></select></div>
+            <div class="field"><label class="lb">Message</label><textarea class="inp" rows="4" placeholder="Describe your enquiry…"></textarea></div>
+            <button class="btn amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>Submit enquiry</button>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Your tickets</h3></div>
+            <div class="list-line"><div class="ll-t"><div class="a">OCR missed my rent statement</div><div class="b">#1042 · 2 days ago</div></div><span class="pill warn">Open</span></div>
+            <div class="list-line"><div class="ll-t"><div class="a">Change subscription plan</div><div class="b">#1038 · 1 week ago</div></div><span class="pill ok">Resolved</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ BILLING ============ -->
+      <section class="screen" id="s-billing">
+        <div class="phead">
+          <div class="ey">Account</div>
+          <h2>Subscription</h2>
+          <p>Pick a plan and connect a payment gateway. Payments are optional in this phase. <span class="rtag">R10</span></p>
+        </div>
+        <div class="grid g3" style="margin-bottom:20px">
+          <div class="card"><h3 style="margin:0 0 4px">Free</h3><div class="cs" style="margin-bottom:12px">1 property · manual entry</div><div class="val num" style="font-size:26px;font-weight:600">$0<span style="font-size:13px;color:var(--g400)">/mo</span></div><button class="btn ghost" style="width:100%;margin-top:14px">Current</button></div>
+          <div class="card hl"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0 0 4px">Pro</h3><span class="pill ind">Popular</span></div><div class="cs" style="margin-bottom:12px">Unlimited · OCR · Basiq</div><div class="val num" style="font-size:26px;font-weight:600">$29<span style="font-size:13px;color:var(--g400)">/mo</span></div><button class="btn" style="width:100%;margin-top:14px">Upgrade</button></div>
+          <div class="card"><h3 style="margin:0 0 4px">Team</h3><div class="cs" style="margin-bottom:12px">Multi-user · accountant access</div><div class="val num" style="font-size:26px;font-weight:600">$79<span style="font-size:13px;color:var(--g400)">/mo</span></div><button class="btn ghost" style="width:100%;margin-top:14px">Choose</button></div>
+        </div>
+        <div class="card" style="display:flex;align-items:center;gap:14px">
+          <div class="ic ind" style="width:44px;height:44px;border-radius:12px"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg></div>
+          <div style="flex:1"><div style="font-weight:600">Payment gateway</div><div class="cs">Stripe / local gateway — connect when you're ready (optional for now).</div></div>
+          <button class="btn ghost">Connect</button>
+        </div>
+      </section>
+
+      <!-- ============ REVIEW / OCR ============ -->
+      <section class="screen" id="s-review">
+        <div class="phead">
+          <div class="ey">Admin</div>
+          <h2>Review panel (OCR)</h2>
+          <p>Emails the OCR couldn't confidently process land here. Compare the source document to the extracted fields, then approve to create the transaction. <span class="rtag">R1</span><span class="rtag">R2</span></p>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:16px"><span class="pill warn">4 to review</span><span class="pill ok">128 processed</span></div>
+        <div class="grid g2">
+          <div class="card">
+            <div class="card-head"><h3>Source document</h3><span class="pill mut">Bank_stmt_Aug.pdf</span></div>
+            <div style="height:280px;border:1px dashed var(--border);border-radius:12px;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--g400);font-size:13px">📄 Scanned statement preview</div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>OCR extracted</h3><span class="pill warn">62% confidence</span></div>
+            <div class="grid g2">
+              <div class="field"><label class="lb">Property</label><select class="inp"><option>12 Oak Street</option><option>4 Pine Avenue</option></select></div>
+              <div class="field"><label class="lb">Category</label><select class="inp"><option>Rent</option><option>Interest</option></select></div>
+              <div class="field"><label class="lb">Amount</label><input class="inp" value="2,400"></div>
+              <div class="field"><label class="lb">Date</label><input class="inp" value="2026-08-05"></div>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:6px">
+              <button class="btn" style="flex:1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Approve &amp; create</button>
+              <button class="btn ghost" style="flex:1">Reject</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ ADMIN CONSOLE ============ -->
+      <section class="screen" id="s-admin">
+        <div class="phead">
+          <div class="ey">Admin</div>
+          <h2>Admin console</h2>
+          <p>Manage users &amp; their inbox IDs, add/amend transactions for any user, and manage categories. <span class="rtag">R2</span></p>
+        </div>
+        <div class="grid g21">
+          <div class="card">
+            <div class="card-head"><div><h3>Users</h3><div class="cs">Add / delete users · view all inbox email IDs</div></div><button class="btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg>Add user</button></div>
+            <table class="tbl">
+              <tr><th>User</th><th>Inbox email ID</th><th>Props</th><th class="r">Actions</th></tr>
+              <tr><td>Jane Doe</td><td class="num">jane92@inbox…</td><td>6</td><td class="r"><span class="tact"><button>Act as</button><button class="del">Delete</button></span></td></tr>
+              <tr><td>Sam Khan</td><td class="num">samk@inbox…</td><td>3</td><td class="r"><span class="tact"><button>Act as</button><button class="del">Delete</button></span></td></tr>
+              <tr><td>Priya Rao</td><td class="num">priya@inbox…</td><td>9</td><td class="r"><span class="tact"><button>Act as</button><button class="del">Delete</button></span></td></tr>
+            </table>
+            <div class="note" style="margin-top:14px"><b>R2</b> — "Act as" lets an admin add or amend transactions on behalf of any user.</div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div><h3>Categories</h3></div><button class="btn sm ghost">+ Add</button></div>
+            <table class="tbl">
+              <tr><th>Category</th><th>Type</th><th class="r"></th></tr>
+              <tr><td>Rent</td><td><span class="pill ok">Income</span></td><td class="r tact"><button class="del">🗑</button></td></tr>
+              <tr><td>Repairs</td><td><span class="pill warn">Expense</span></td><td class="r tact"><button class="del">🗑</button></td></tr>
+              <tr><td>Interest</td><td><span class="pill warn">Expense</span></td><td class="r tact"><button class="del">🗑</button></td></tr>
+              <tr><td>Insurance</td><td><span class="pill warn">Expense</span></td><td class="r tact"><button class="del">🗑</button></td></tr>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div></div>
+  </div>
+</div>
+
+<script>
+  // ---- sidebar navigation ----
+  const nav = document.getElementById('nav');
+  function go(name){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on', s.id==='s-'+name));
+    document.querySelectorAll('#nav a').forEach(a=>{
+      const on = a.dataset.screen===name;
+      a.classList.toggle('on', on);
+      if(on){ document.getElementById('pgTitle').textContent = a.dataset.title; document.getElementById('pgSub').textContent = a.dataset.sub; }
+    });
+    document.querySelector('.content').scrollTop = 0;
+  }
+  nav.addEventListener('click', e=>{
+    const a = e.target.closest('a'); if(!a) return; e.preventDefault(); go(a.dataset.screen);
+  });
+
+  // ---- transaction date fields change by entry type ----
+  const txDates = document.getElementById('txDates');
+  const txHeading = document.getElementById('txHeading');
+  const fld = (label,val,extra='')=>`<label class="lb">${label}</label><input class="inp" value="${val}">${extra}`;
+  function txType(btn, type){
+    btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    if(type==='income'){ txHeading.textContent='New income'; txDates.innerHTML = fld('Received date','2026-08-05'); }
+    else if(type==='expense'){ txHeading.textContent='New expense'; txDates.innerHTML = fld('Expense date','2026-08-05'); }
+    else { txHeading.textContent='New recurring entry';
+      txDates.innerHTML = `<label class="lb">Start date &amp; frequency</label>
+        <div style="display:flex;gap:8px"><input class="inp" value="2026-08-05" style="flex:1">
+        <select class="inp" style="flex:none;width:120px"><option>Monthly</option><option>Weekly</option><option>Yearly</option></select></div>`;
+    }
+  }
+  txType(document.querySelector('#s-transactions .seg button.on'),'income');
+</script>

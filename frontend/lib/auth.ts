@@ -46,7 +46,7 @@ export async function logout(): Promise<void> {
 /**
  * Get current session/user
  */
-export async function getSession(): Promise<{ email: string; name: string; uniqueId: string } | null> {
+export async function getSession(): Promise<{ id: string; email: string; name: string; uniqueId: string; role: string; accountStatus: string } | null> {
     // Check if we have an access token
     if (!getAccessToken()) {
         // Try to initialize from refresh token
@@ -59,9 +59,12 @@ export async function getSession(): Promise<{ email: string; name: string; uniqu
     if (response.success && response.data?.user) {
         const user = response.data.user;
         return {
+            id: user.id,
             email: user.email,
             name: user.name,
             uniqueId: user.uniqueId,
+            role: user.role,
+            accountStatus: user.accountStatus,
         };
     }
 

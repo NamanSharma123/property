@@ -12,6 +12,7 @@ def format_user(user):
         'email': user.email,
         'role': user.role,
         'uniqueId': user.unique_id,
+        'inboundEmail': user.inbound_email,
         'phone': user.phone,
         'avatar': user.avatar,
         'isEmailVerified': user.is_email_verified,

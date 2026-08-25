@@ -26,6 +26,7 @@ export interface User {
     email: string;
     role: string;
     uniqueId: string;
+    inboundEmail?: string;
     phone?: string;
     avatar?: string;
     isEmailVerified: boolean;
@@ -92,8 +93,10 @@ export const clearTokens = () => {
     notifyAuthStateChange(false);
 };
 
-// API fetch wrapper with enhanced error handling
-async function apiFetch<T>(
+// API fetch wrapper with enhanced error handling. Exported so other API
+// modules (e.g. lib/adminApi.ts) can reuse the same token/refresh/error
+// handling instead of re-implementing it.
+export async function apiFetch<T>(
     endpoint: string,
     options: RequestInit = {},
     retry = true,

@@ -24,6 +24,14 @@ class Document(TimeStampedModel):
     error_message = models.TextField(null=True, blank=True)
     processing_started_at = models.DateTimeField(null=True, blank=True)
     processing_completed_at = models.DateTimeField(null=True, blank=True)
+    # Admin OCR Review Panel — who approved/rejected this document (and
+    # when), separate from `status` so "processed automatically, never
+    # reviewed" and "processed, admin-reviewed" stay distinguishable.
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, db_column='reviewed_by',
+        null=True, blank=True, related_name='reviewed_documents'
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'documents'
@@ -97,3 +105,32 @@ class DocumentLineItem(CreatedModel):
         indexes = [
             models.Index(fields=['document'], name='idx_line_items_doc_id'),
         ]
+
+
+class OcrTemplate(TimeStampedModel):
+    """
+    Admin-facing registry of the document types OCR is expected to handle
+    (spec: "OCR Template Management" — enable/disable, confidence
+    threshold, version). Deliberately informational/toggleable metadata,
+    not a parsing engine: extraction itself runs client-side (Tesseract in
+    the browser) using fixed keyword logic in apps.ocr.parser /
+    statement_parser, not a template lookup. `document_type` is the value
+    that already gets written to Document.document_type by the client, so
+    the admin panel can show accurate per-type stats without this table
+    controlling how parsing actually happens.
+    """
+    STATUS_CHOICES = [('enabled', 'enabled'), ('disabled', 'disabled')]
+
+    name = models.CharField(max_length=100)
+    document_type = models.CharField(max_length=50, unique=True)
+    confidence_threshold = models.FloatField(default=70.0)
+    version = models.CharField(max_length=20, default='1.0')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='enabled')
+    description = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'ocr_templates'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name

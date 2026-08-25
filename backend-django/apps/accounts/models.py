@@ -34,6 +34,10 @@ class User(AbstractBaseUser, TimeStampedModel):
     lock_until = models.DateTimeField(null=True, blank=True)
     # last_login comes from AbstractBaseUser and matches the existing column
     password_changed_at = models.DateTimeField(null=True, blank=True)
+    # Permanent inbound-email address for the OCR ingestion pipeline (admin
+    # panel "Unique OCR Email"). Set once at signup and never changed — see
+    # apps.accounts.inbound_email.generate_inbound_email().
+    inbound_email = models.CharField(max_length=255, unique=True, null=True, blank=True)
 
     objects = UserManager()
 

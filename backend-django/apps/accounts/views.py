@@ -21,6 +21,7 @@ from apps.common.utils import get_ip, get_user_agent, log_activity
 from apps.common.views import ProtectedView, PublicView
 
 from .authentication import generate_access_token, generate_refresh_token
+from .inbound_email import generate_inbound_email
 from .models import PasswordResetToken, Session, User
 from .serializers import format_session, format_user
 
@@ -118,6 +119,8 @@ class SignupView(PublicView):
             unique_id=generate_unique_id(role),
             account_status='active',
         )
+        user.inbound_email = generate_inbound_email(user.id)
+        user.save(update_fields=['inbound_email'])
 
         access_token = generate_access_token(user.id)
         refresh_token = generate_refresh_token()
@@ -369,6 +372,47 @@ class DeleteAccountView(ProtectedView):
         return Response({'success': True, 'message': 'Account deleted successfully'})
 
 
+def send_password_reset_email(user, request=None, triggered_by_admin=False):
+    """Create a PasswordResetToken and email the reset link. Shared by the
+    user-facing ForgotPasswordView and the admin panel's "reset password"
+    user action, so there's exactly one password-reset code path."""
+    token = secrets.token_urlsafe(48)
+    PasswordResetToken.objects.create(
+        user=user,
+        token=token,
+        expires_at=timezone.now() + timedelta(minutes=30),
+    )
+
+    reset_url = f"{settings.FRONTEND_URL}/auth/reset-password?token={token}"
+    intro = (
+        "An administrator has triggered a password reset for your Properly account. "
+        if triggered_by_admin else
+        "We received a request to reset your Properly password. "
+    )
+    try:
+        send_mail(
+            subject='Reset your Properly password',
+            message=(
+                f"Hi {user.name},\n\n"
+                f"{intro}"
+                "Click the link below to choose a new one — it expires in 30 minutes:\n\n"
+                f"{reset_url}\n\n"
+                "If you didn't request this, you can safely ignore this email — "
+                "your password won't be changed."
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        log_activity(user.id, 'password_reset_requested', request=request, success=True)
+        return True
+    except Exception as exc:
+        log_activity(user.id, 'password_reset_email_failed', request=request,
+                     description='Failed to send password reset email',
+                     error_message=str(exc), success=False)
+        return False
+
+
 class ForgotPasswordView(PublicView):
     """POST /api/auth/forgot-password — {email}. Always responds the same
     way regardless of whether the account exists, to avoid leaking which
@@ -388,34 +432,7 @@ class ForgotPasswordView(PublicView):
         if not user:
             return generic_response
 
-        token = secrets.token_urlsafe(48)
-        PasswordResetToken.objects.create(
-            user=user,
-            token=token,
-            expires_at=timezone.now() + timedelta(minutes=30),
-        )
-
-        reset_url = f"{settings.FRONTEND_URL}/auth/reset-password?token={token}"
-        try:
-            send_mail(
-                subject='Reset your Properly password',
-                message=(
-                    f"Hi {user.name},\n\n"
-                    "We received a request to reset your Properly password. "
-                    "Click the link below to choose a new one — it expires in 30 minutes:\n\n"
-                    f"{reset_url}\n\n"
-                    "If you didn't request this, you can safely ignore this email — "
-                    "your password won't be changed."
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-            log_activity(user.id, 'password_reset_requested', request=request, success=True)
-        except Exception as exc:
-            log_activity(user.id, 'password_reset_email_failed', request=request,
-                         description='Failed to send password reset email',
-                         error_message=str(exc), success=False)
+        send_password_reset_email(user, request=request)
 
         return generic_response
 

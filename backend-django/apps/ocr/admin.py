@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Document, DocumentDuplicate, DocumentLineItem, ExtractedData
+from .models import Document, DocumentDuplicate, DocumentLineItem, ExtractedData, OcrTemplate
 
 
 @admin.register(Document)
@@ -26,3 +26,9 @@ class ExtractedDataAdmin(admin.ModelAdmin):
 @admin.register(DocumentDuplicate)
 class DocumentDuplicateAdmin(admin.ModelAdmin):
     list_display = ('file_hash', 'owner', 'detection_type', 'created_at')
+
+
+@admin.register(OcrTemplate)
+class OcrTemplateAdmin(admin.ModelAdmin):
+    list_display = ('name', 'document_type', 'status', 'confidence_threshold', 'version', 'updated_at')
+    list_filter = ('status',)
