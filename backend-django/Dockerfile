@@ -21,10 +21,15 @@ COPY . .
 # this at container start.
 RUN DJANGO_SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
 
+RUN chmod +x entrypoint.sh
+
 EXPOSE 5000
 
+# entrypoint.sh runs `migrate` (idempotent) before starting gunicorn —
+# App Runner has no separate one-off-task step, so this is what keeps the
+# production schema in sync on every deploy without a manual migrate step.
 # --timeout 60: Neon's free tier suspends the DB compute when idle, and the
 # first request after a while can take ~30s to wake it back up — the default
 # gunicorn timeout (30s) killed that request right as it was about to
 # succeed. 60s gives headroom without masking a genuinely hung request.
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "60"]
+CMD ["./entrypoint.sh"]
