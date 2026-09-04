@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Eye } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import adminApi from "@/lib/adminApi";
@@ -26,6 +27,18 @@ const statusTone: Record<string, string> = {
 export default function DocumentsTab({ userId }: { userId: string }) {
   const [rows, setRows] = useState<DocumentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const preview = async (id: string) => {
+    setBusyId(id);
+    const res = await adminApi.documents.getViewUrl(id);
+    setBusyId(null);
+    if (res.success && res.data) {
+      window.open(res.data.url, "_blank", "noopener,noreferrer");
+    } else {
+      toast.error(res.error || "Could not open document");
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +67,7 @@ export default function DocumentsTab({ userId }: { userId: string }) {
           <TableHead>Status</TableHead>
           <TableHead className="text-right">OCR confidence</TableHead>
           <TableHead>Uploaded</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -69,6 +83,13 @@ export default function DocumentsTab({ userId }: { userId: string }) {
               {d.ocr_confidence != null ? `${Math.round(d.ocr_confidence)}%` : "—"}
             </TableCell>
             <TableCell className="text-xs text-gray-500 whitespace-nowrap">{new Date(d.created_at).toLocaleDateString()}</TableCell>
+            <TableCell>
+              <div className="flex justify-end">
+                <button disabled={busyId === d.id} onClick={() => preview(d.id)} className="p-1.5 rounded-md text-gray-400 hover:text-primary hover:bg-gray-50 disabled:opacity-40" title="Preview / download">
+                  <Eye size={16} />
+                </button>
+              </div>
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>

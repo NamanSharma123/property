@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -56,8 +57,10 @@ export default function PropertiesTab({ userId }: { userId: string }) {
         {rows.map((p) => (
           <TableRow key={p.id}>
             <TableCell>
-              <div className="text-sm font-medium text-gray-900">{p.name}</div>
-              <div className="text-xs text-gray-400">{p.full_address || "—"}</div>
+              <Link href={`/admin/properties/${p.id}`} className="block hover:text-primary">
+                <div className="text-sm font-medium text-gray-900">{p.name}</div>
+                <div className="text-xs text-gray-400">{p.full_address || "—"}</div>
+              </Link>
             </TableCell>
             <TableCell className="text-sm text-gray-600 capitalize">{p.type}</TableCell>
             <TableCell className="text-right text-sm tabular-nums">{money(p.purchase_price)}</TableCell>

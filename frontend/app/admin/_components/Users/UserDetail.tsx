@@ -16,8 +16,8 @@ import PropertiesTab from "./tabs/PropertiesTab";
 import TransactionsTab from "./tabs/TransactionsTab";
 import DocumentsTab from "./tabs/DocumentsTab";
 import LoansTab from "./tabs/LoansTab";
+import SupportTab from "./tabs/SupportTab";
 import ActivityTab from "./tabs/ActivityTab";
-import EmptyTab from "./tabs/EmptyTab";
 
 const statusTone: Record<string, string> = {
   active: "bg-green-50 text-green-700 border-green-200",
@@ -198,9 +198,7 @@ export default function UserDetail({ userId, isFullAdmin }: { userId: string; is
           <TabsContent value="transactions" className="mt-0"><TransactionsTab userId={userId} /></TabsContent>
           <TabsContent value="documents" className="mt-0"><DocumentsTab userId={userId} /></TabsContent>
           <TabsContent value="loans" className="mt-0"><LoansTab userId={userId} /></TabsContent>
-          <TabsContent value="support" className="mt-0">
-            <EmptyTab title="Support tickets ship in a later phase" note="This tab will show this user's full ticket history once the Support Ticket Center is built." />
-          </TabsContent>
+          <TabsContent value="support" className="mt-0"><SupportTab userId={userId} /></TabsContent>
           <TabsContent value="activity" className="mt-0"><ActivityTab userId={userId} /></TabsContent>
         </div>
       </Tabs>
