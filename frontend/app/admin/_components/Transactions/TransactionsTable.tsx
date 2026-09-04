@@ -15,6 +15,7 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import adminApi, { AdminTransaction } from "@/lib/adminApi";
 import { PageHeader } from "@/app/admin/_components/PageHeader";
+import UserFilterSelect from "@/app/admin/_components/shared/UserFilterSelect";
 import TransactionEditDialog from "./TransactionEditDialog";
 
 const sourceTone: Record<string, string> = {
@@ -75,6 +76,7 @@ export default function TransactionsTable({ isFullAdmin }: { isFullAdmin: boolea
   const [search, setSearch] = useState("");
   const [type, setType] = useState("all");
   const [source, setSource] = useState("all");
+  const [userId, setUserId] = useState("all");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -89,6 +91,7 @@ export default function TransactionsTable({ isFullAdmin }: { isFullAdmin: boolea
       search: search || undefined,
       type: type === "all" ? undefined : type,
       source: source === "all" ? undefined : source,
+      userId: userId === "all" ? undefined : userId,
       page,
       limit: 25,
     });
@@ -100,12 +103,12 @@ export default function TransactionsTable({ isFullAdmin }: { isFullAdmin: boolea
       toast.error(res.error || "Failed to load transactions");
     }
     setLoading(false);
-  }, [search, type, source, page]);
+  }, [search, type, source, userId, page]);
 
   useEffect(() => {
     const handle = setTimeout(() => setPage(1), 350);
     return () => clearTimeout(handle);
-  }, [search, type, source]);
+  }, [search, type, source, userId]);
 
   useEffect(() => { load(); setSelected(new Set()); }, [load]);
 
@@ -138,7 +141,7 @@ export default function TransactionsTable({ isFullAdmin }: { isFullAdmin: boolea
   const exportCsv = async () => {
     const res = await adminApi.transactions.getAll({
       search: search || undefined, type: type === "all" ? undefined : type,
-      source: source === "all" ? undefined : source, limit: 5000,
+      source: source === "all" ? undefined : source, userId: userId === "all" ? undefined : userId, limit: 5000,
     });
     if (!res.success || !res.data) return;
     const header = "Date,Description,Owner,Property,Category,Type,Amount,Source,Status\n";
@@ -179,6 +182,7 @@ export default function TransactionsTable({ isFullAdmin }: { isFullAdmin: boolea
             <SelectItem value="basiq">Basiq</SelectItem>
           </SelectContent>
         </Select>
+        <UserFilterSelect value={userId} onChange={setUserId} className="w-full sm:w-56" />
         <div className="flex-1" />
         <button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50">
           <Download size={14} /> Export CSV

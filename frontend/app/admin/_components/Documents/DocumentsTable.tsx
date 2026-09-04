@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import adminApi, { AdminDocument } from "@/lib/adminApi";
 import { PageHeader } from "@/app/admin/_components/PageHeader";
+import UserFilterSelect from "@/app/admin/_components/shared/UserFilterSelect";
 
 const statusTone: Record<string, string> = {
   completed: "bg-green-50 text-green-700 border-green-200",
@@ -25,6 +26,7 @@ export default function DocumentsTable({ isFullAdmin }: { isFullAdmin: boolean }
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const [userId, setUserId] = useState("all");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -35,6 +37,7 @@ export default function DocumentsTable({ isFullAdmin }: { isFullAdmin: boolean }
     const res = await adminApi.documents.getAll({
       search: search || undefined,
       status: status === "all" ? undefined : status,
+      userId: userId === "all" ? undefined : userId,
       page, limit: 25,
     });
     if (res.success && res.data) {
@@ -45,12 +48,12 @@ export default function DocumentsTable({ isFullAdmin }: { isFullAdmin: boolean }
       toast.error(res.error || "Failed to load documents");
     }
     setLoading(false);
-  }, [search, status, page]);
+  }, [search, status, userId, page]);
 
   useEffect(() => {
     const handle = setTimeout(() => setPage(1), 350);
     return () => clearTimeout(handle);
-  }, [search, status]);
+  }, [search, status, userId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -99,6 +102,7 @@ export default function DocumentsTable({ isFullAdmin }: { isFullAdmin: boolean }
             <SelectItem value="failed">Failed</SelectItem>
           </SelectContent>
         </Select>
+        <UserFilterSelect value={userId} onChange={setUserId} />
       </div>
 
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">

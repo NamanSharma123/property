@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import adminApi, { AdminProperty } from "@/lib/adminApi";
 import { PageHeader } from "@/app/admin/_components/PageHeader";
+import UserFilterSelect from "@/app/admin/_components/shared/UserFilterSelect";
 import TransferOwnershipDialog from "./TransferOwnershipDialog";
 
 const money = (n: number | string | null) => n == null ? "—" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -28,6 +29,7 @@ export default function PropertiesTable({ isFullAdmin }: { isFullAdmin: boolean 
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const [userId, setUserId] = useState("all");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -38,6 +40,7 @@ export default function PropertiesTable({ isFullAdmin }: { isFullAdmin: boolean 
     const res = await adminApi.properties.getAll({
       search: search || undefined,
       status: status === "all" ? undefined : status,
+      userId: userId === "all" ? undefined : userId,
       page,
       limit: 20,
     });
@@ -49,12 +52,12 @@ export default function PropertiesTable({ isFullAdmin }: { isFullAdmin: boolean 
       toast.error(res.error || "Failed to load properties");
     }
     setLoading(false);
-  }, [search, status, page]);
+  }, [search, status, userId, page]);
 
   useEffect(() => {
     const handle = setTimeout(() => setPage(1), 350);
     return () => clearTimeout(handle);
-  }, [search, status]);
+  }, [search, status, userId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -97,6 +100,7 @@ export default function PropertiesTable({ isFullAdmin }: { isFullAdmin: boolean 
             <SelectItem value="inactive">Inactive</SelectItem>
           </SelectContent>
         </Select>
+        <UserFilterSelect value={userId} onChange={setUserId} />
       </div>
 
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
