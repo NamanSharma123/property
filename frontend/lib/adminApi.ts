@@ -518,6 +518,12 @@ export const adminApi = {
         async convert(id: string) {
             return apiFetch<{ emailMessage: EmailMessage; documentId: string }>(`/api/admin/email-inbox/${id}/convert`, { method: 'POST' });
         },
+        async runJob(ids?: string[]) {
+            return apiFetch<{ processed: number; needs_review: number; failed: number; total: number }>(
+                '/api/admin/email-inbox/run-job',
+                { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) }
+            );
+        },
     },
 
     support: {

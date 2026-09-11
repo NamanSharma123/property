@@ -11,6 +11,7 @@ from apps.common.exceptions import error_response
 from apps.common.pagination import get_pagination, pagination_payload
 from apps.common.utils import log_activity
 from apps.email_inbox.models import EmailMessage
+from apps.email_inbox.processing import process_pending_messages
 from apps.email_inbox.serializers import email_message_row
 from apps.ocr.models import Document
 from apps.properties.models import Property
@@ -131,4 +132,31 @@ class AdminEmailConvertView(AdminProtectedView):
             'success': True,
             'data': {'emailMessage': email_message_row(msg), 'documentId': str(document.id)},
             'message': 'Converted to a document — it now appears in the Documents list and OCR Review Panel',
+        })
+
+
+class AdminEmailRunJobView(AdminProtectedView):
+    """POST /api/admin/email-inbox/run-job — {ids?}. Unique Email ID spec
+    point 5: "Admin should be allowed to run the OCR job for all user on
+    demand". Runs apps.email_inbox.processing synchronously against every
+    outstanding message (or just `ids`, for retrying specific rows), doing
+    on-request what the periodic Celery task (apps.email_inbox.tasks) would
+    otherwise do hourly — this works today without a deployed worker."""
+    allow_support = False
+
+    def post(self, request):
+        ids = request.data.get('ids') or None
+        counts = process_pending_messages(message_ids=ids)
+
+        log_admin_action(request.user, 'email.run_ocr_job', request=request, entity_type='email_message',
+                          new_value=counts)
+
+        return Response({
+            'success': True,
+            'data': counts,
+            'message': (
+                f"Processed {counts['total']} email(s): "
+                f"{counts['processed']} processed, {counts['needs_review']} need review, "
+                f"{counts['failed']} failed."
+            ) if counts['total'] else 'No outstanding emails to process.',
         })

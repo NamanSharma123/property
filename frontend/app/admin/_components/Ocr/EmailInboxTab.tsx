@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Search, Link2, FileInput, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Link2, FileInput, ChevronLeft, ChevronRight, PlayCircle, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -56,7 +56,7 @@ function MapDialog({ message, open, onOpenChange, onMapped }: { message: EmailMe
   );
 }
 
-export default function EmailInboxTab() {
+export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean }) {
   const [rows, setRows] = useState<EmailMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -65,6 +65,7 @@ export default function EmailInboxTab() {
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [mapping, setMapping] = useState<EmailMessage | null>(null);
+  const [runningJob, setRunningJob] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,11 +89,36 @@ export default function EmailInboxTab() {
     else toast.error(res.error || "Convert failed");
   };
 
+  const runJob = async () => {
+    setRunningJob(true);
+    const res = await adminApi.emailInbox.runJob();
+    setRunningJob(false);
+    if (res.success) {
+      toast.success(res.message || "OCR job run complete");
+      load();
+    } else {
+      toast.error(res.error || "OCR job failed to run");
+    }
+  };
+
   return (
     <div>
-      <p className="text-xs text-gray-400 mb-3">
-        Populated by the SES inbound-email webhook once it&apos;s wired to a real domain — empty until then.
-      </p>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <p className="text-xs text-gray-400">
+          Populated by the SES inbound-email webhook once it&apos;s wired to a real domain — empty until then.
+          The OCR job runs hourly in the background; use &quot;Run OCR job now&quot; to process outstanding emails immediately.
+        </p>
+        {isFullAdmin && (
+          <button
+            onClick={runJob}
+            disabled={runningJob}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+          >
+            {runningJob ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />}
+            {runningJob ? "Running…" : "Run OCR job now"}
+          </button>
+        )}
+      </div>
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -103,6 +129,7 @@ export default function EmailInboxTab() {
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="received">Received</SelectItem>
+            <SelectItem value="processing">Processing</SelectItem>
             <SelectItem value="needs_review">Needs review</SelectItem>
             <SelectItem value="processed">Processed</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>
@@ -132,7 +159,11 @@ export default function EmailInboxTab() {
                 <TableCell className="text-sm text-gray-900">{m.sender}</TableCell>
                 <TableCell className="text-sm text-gray-500">{m.subject || "—"}</TableCell>
                 <TableCell className="text-sm text-gray-500">{m.user_name || "—"}</TableCell>
-                <TableCell><Badge variant="outline" className={statusTone[m.status] || ""}>{m.status.replace(/_/g, " ")}</Badge></TableCell>
+                <TableCell>
+                  <Badge variant="outline" className={statusTone[m.status] || ""} title={m.processing_log || undefined}>
+                    {m.status.replace(/_/g, " ")}
+                  </Badge>
+                </TableCell>
                 <TableCell className="text-xs text-gray-500 whitespace-nowrap">{new Date(m.received_at).toLocaleDateString()}</TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-1">

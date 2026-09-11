@@ -50,6 +50,7 @@ urlpatterns = [
     path('admin/ocr/templates/<uuid:template_id>', views_ocr.AdminOcrTemplateDetailView.as_view()),
 
     path('admin/email-inbox', views_email.AdminEmailInboxListView.as_view()),
+    path('admin/email-inbox/run-job', views_email.AdminEmailRunJobView.as_view()),
     path('admin/email-inbox/<uuid:message_id>', views_email.AdminEmailDetailView.as_view()),
     path('admin/email-inbox/<uuid:message_id>/map', views_email.AdminEmailMapView.as_view()),
     path('admin/email-inbox/<uuid:message_id>/convert', views_email.AdminEmailConvertView.as_view()),
