@@ -10,7 +10,7 @@ import { ArrowLeft, Upload, Download, Printer, MoreVertical, Trash2, Plus, Chevr
 import { addMultipleTransactions } from '@/lib/transaction';
 import { getUnitLabelsForProperty } from '@/lib/property';
 import { processDocument, extractLineItemsForTransactions, matchUnitLabel } from '@/lib/ocrService';
-import { documentsApi } from '@/lib/api';
+import { documentsApi, categoriesApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { usePropertiesSWR } from '@/hooks/usePropertiesSWR';
 import { useRouter } from 'next/navigation';
@@ -95,6 +95,30 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
   ]);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Categories created via the admin panel (or by this user) on top of the
+  // built-in tax taxonomy below — fetched so a category an admin adds shows
+  // up here without a code change, instead of only ever existing on the
+  // admin side. Keyed by the dropdown value (the category's name) so it can
+  // be looked up when building the transaction payload further down.
+  const [customCategories, setCustomCategories] = useState<Record<string, { id: string; type: 'income' | 'expense' }>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await categoriesApi.getAll({ includeSystem: true });
+      if (cancelled || !res.success || !res.data) return;
+      const data = res.data as { categories: Array<Record<string, unknown>> };
+      const map: Record<string, { id: string; type: 'income' | 'expense' }> = {};
+      for (const c of data.categories || []) {
+        const type = c.type as string;
+        if (type !== 'income' && type !== 'expense') continue;
+        map[c.name as string] = { id: c.id as string, type };
+      }
+      setCustomCategories(map);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Statement-upload mode: a document was uploaded (whether or not OCR
   // managed to pull dates out of it), or the user manually flagged a row as
@@ -500,12 +524,23 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
         propertyName: property.name,
         propertyType: property.type || 'Residential',
         category: detail.category,
+        // A category created via the admin panel isn't in the built-in
+        // taxonomy's income/expense mapping — pass its real type and id
+        // explicitly so it isn't mis-typed as an expense by default.
+        ...(customCategories[detail.category] ? {
+          categoryType: customCategories[detail.category].type,
+          categoryId: customCategories[detail.category].id,
+        } : {}),
         ...(detail.unitLabel ? { unitLabel: detail.unitLabel } : {}),
         amount: parseFloat(detail.amount) || 0,
         // Direct-statement mode: every row is dated by the shared statement
         // period above. Otherwise each row carries its own Expense Date.
         date: isStatementUploadMode ? statementDateStr : detail.expenseDate!,
-        transactionSource: 'OCR Upload' as const,
+        // Only tag a transaction as OCR-sourced when it actually came from an
+        // uploaded file being scanned — rows entered by hand (no file picked)
+        // are Manual Entry, matching how the admin panel's Source column and
+        // filters distinguish the two.
+        transactionSource: (selectedFile ? 'OCR Upload' : 'Manual Entry') as 'OCR Upload' | 'Manual Entry',
         // Distinguishes otherwise-identical rows (e.g. several weekly rent
         // payments of the same amount) so the backend's duplicate-transaction
         // check doesn't reject legitimate separate transactions as repeats.
@@ -711,6 +746,16 @@ export default function OCRPage({ onBackClick, initialPropertyId }: OCRPageProps
       ]
     },
   ];
+
+  // Append admin/user-created categories to their matching Income/Expense
+  // group, skipping any name that collides with a built-in item — the fixed
+  // tax taxonomy above always wins so report/OCR slug-matching stays intact.
+  const builtInLabels = new Set(categories.flatMap(g => g.items.map(i => i.label.toLowerCase())));
+  for (const [name, meta] of Object.entries(customCategories)) {
+    if (builtInLabels.has(name.toLowerCase())) continue;
+    const group = categories.find(g => g.group === (meta.type === 'income' ? 'Income' : 'Expense'));
+    group?.items.push({ value: name, label: name });
+  }
 
   return (
     <div className="w-full px-6 py-6">

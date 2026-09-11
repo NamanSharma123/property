@@ -68,7 +68,7 @@ export function SettingsSection({ user }: SettingsSectionProps) {
                 <div className="flex items-center gap-3">
                   <Mail className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                   <div className="min-w-0">
-                    <p className="font-medium text-sm truncate">{user?.email || 'john.doe@email.com'}</p>
+                    <p className="font-medium text-sm truncate">{user?.email || 'Not provided'}</p>
                     <div className="flex items-center gap-2 flex-wrap">
                       <Badge variant="secondary" className="text-xs bg-emerald-50 text-emerald-700">
                         <Check className="w-3 h-3 mr-1" />
@@ -96,11 +96,13 @@ export function SettingsSection({ user }: SettingsSectionProps) {
                 <div className="flex items-center gap-3">
                   <Smartphone className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                   <div>
-                    <p className="font-medium text-sm">+61 400 123 456</p>
-                    <Badge variant="secondary" className="text-xs bg-emerald-50 text-emerald-700">
-                      <Check className="w-3 h-3 mr-1" />
-                      Verified
-                    </Badge>
+                    <p className="font-medium text-sm">{user?.phone || "Not provided"}</p>
+                    {user?.phone && (
+                      <Badge variant="secondary" className="text-xs bg-emerald-50 text-emerald-700">
+                        <Check className="w-3 h-3 mr-1" />
+                        Verified
+                      </Badge>
+                    )}
                   </div>
                 </div>
                 <Button variant="outline" size="sm" className="w-full sm:w-auto bg-transparent">

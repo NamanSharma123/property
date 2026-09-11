@@ -198,8 +198,13 @@ export async function addTransaction(data: {
   transactionSource?: string;
   description?: string;
   receiptUrl?: string;
+  // For categories that aren't part of the built-in tax taxonomy above
+  // (e.g. one created through the admin panel) — its real type and FK id,
+  // since categoryLabelsMap won't have an entry for it.
+  categoryType?: 'income' | 'expense';
+  categoryId?: string;
 }): Promise<{ success: boolean; error?: string }> {
-  const categoryInfo = categoryLabelsMap[data.category] || { label: data.category, type: 'expense' };
+  const categoryInfo = categoryLabelsMap[data.category] || { label: data.category, type: data.categoryType || 'expense' };
 
   const response = await transactionsApi.create({
     propertyId: data.propertyId,
@@ -212,6 +217,7 @@ export async function addTransaction(data: {
     status: 'paid',
     ...(data.unitLabel ? { unitLabel: data.unitLabel } : {}),
     ...(data.receiptUrl ? { receiptUrl: data.receiptUrl } : {}),
+    ...(data.categoryId ? { categoryId: data.categoryId } : {}),
   });
 
   if (response.success) {
@@ -232,6 +238,8 @@ export async function addMultipleTransactions(items: Array<{
   transactionSource?: string;
   description?: string;
   receiptUrl?: string;
+  categoryType?: 'income' | 'expense';
+  categoryId?: string;
 }>): Promise<{ success: boolean; error?: string; count?: number; failures?: string[] }> {
   let count = 0;
   const failures: string[] = [];

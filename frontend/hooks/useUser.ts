@@ -86,12 +86,12 @@ export function useUser() {
     }
   };
 
-  const signup = async (name: string, email: string, password: string) => {
+  const signup = async (name: string, email: string, password: string, phone: string) => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const response = await authApi.signup(name, email, password);
+      const response = await authApi.signup(name, email, password, phone);
 
       if (response.success && response.data?.user) {
         setUser(response.data.user);

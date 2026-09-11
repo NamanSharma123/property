@@ -18,7 +18,10 @@ class Command(BaseCommand):
         users = User.objects.filter(inbound_email__isnull=True)
         count = 0
         for user in users:
-            user.inbound_email = generate_inbound_email(user.id)
+            candidate = generate_inbound_email(phone=user.phone, user_id=user.id)
+            if User.objects.filter(inbound_email=candidate).exclude(id=user.id).exists():
+                candidate = generate_inbound_email(user_id=user.id)
+            user.inbound_email = candidate
             user.save(update_fields=['inbound_email'])
             count += 1
         self.stdout.write(self.style.SUCCESS(f'Backfilled inbound_email for {count} user(s).'))

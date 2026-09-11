@@ -20,8 +20,8 @@ export async function login(email: string, password: string): Promise<{ success:
 /**
  * Signup with name, email and password
  */
-export async function signup(name: string, email: string, password: string): Promise<{ success: boolean; error?: string }> {
-    const response = await authApi.signup(name, email, password);
+export async function signup(name: string, email: string, password: string, phone: string): Promise<{ success: boolean; error?: string }> {
+    const response = await authApi.signup(name, email, password, phone);
 
     if (response.success) {
         return { success: true };

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { Building2, Mail, Lock, User, ArrowRight, AlertCircle, Check, Circle, Eye, EyeOff } from 'lucide-react'
+import { Building2, Mail, Lock, User, Phone, ArrowRight, AlertCircle, Check, Circle, Eye, EyeOff } from 'lucide-react'
 import { signup } from '@/lib/auth'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -21,6 +21,7 @@ export default function SignupPage() {
     const [formData, setFormData] = useState({
         name: '',
         email: '',
+        phone: '',
         password: '',
         confirmPassword: '',
     })
@@ -52,6 +53,7 @@ export default function SignupPage() {
 
     const canSubmit = formData.name.length >= 2 &&
         formData.email.includes('@') &&
+        formData.phone.replace(/\D/g, '').length >= 8 &&
         allRulesPassed &&
         passwordsMatch;
 
@@ -73,7 +75,7 @@ export default function SignupPage() {
         }
 
         try {
-            const result = await signup(formData.name, formData.email, formData.password);
+            const result = await signup(formData.name, formData.email, formData.password, formData.phone);
 
             if (result?.error) {
                 setError(result.error);
@@ -182,6 +184,31 @@ export default function SignupPage() {
                                         autoComplete="email"
                                     />
                                 </div>
+                            </div>
+
+                            <div>
+                                <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                                    Phone number
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Phone className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        id="phone"
+                                        name="phone"
+                                        type="tel"
+                                        required
+                                        value={formData.phone}
+                                        onChange={handleChange}
+                                        className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        placeholder="+61 400 123 456"
+                                        autoComplete="tel"
+                                    />
+                                </div>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    Used as your unique OCR inbound-email address for scanning statements and receipts.
+                                </p>
                             </div>
 
                             <div>

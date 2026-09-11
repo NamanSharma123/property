@@ -249,10 +249,10 @@ export const authApi = {
         return response as AuthResponse;
     },
 
-    async signup(name: string, email: string, password: string): Promise<AuthResponse> {
+    async signup(name: string, email: string, password: string, phone: string): Promise<AuthResponse> {
         const response = await apiFetch<AuthResponse['data']>('/api/auth/signup', {
             method: 'POST',
-            body: JSON.stringify({ name, email, password }),
+            body: JSON.stringify({ name, email, password, phone }),
         });
 
         if (response.success && response.data) {
@@ -652,6 +652,58 @@ export const depreciationApi = {
     },
 };
 
+// Support tickets API
+export interface TicketMessage {
+    id: string;
+    ticket_id: string;
+    author_id?: string;
+    author_name?: string;
+    body: string;
+    created_at: string;
+}
+
+export interface SupportTicket {
+    id: string;
+    subject: string;
+    category: string;
+    priority: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    messages?: TicketMessage[];
+}
+
+export const ticketsApi = {
+    async getAll(params?: { status?: string; page?: number; limit?: number }) {
+        const searchParams = new URLSearchParams();
+        if (params) {
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== undefined) searchParams.append(key, String(value));
+            });
+        }
+        const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+        return apiFetch<{ tickets: SupportTicket[]; pagination: Record<string, unknown> }>(`/api/tickets${query}`);
+    },
+
+    async getOne(id: string) {
+        return apiFetch<{ ticket: SupportTicket }>(`/api/tickets/${id}`);
+    },
+
+    async create(data: { subject: string; message: string; category?: string; priority?: string }) {
+        return apiFetch<{ ticket: SupportTicket }>('/api/tickets', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    },
+
+    async reply(id: string, message: string) {
+        return apiFetch<{ message: TicketMessage }>(`/api/tickets/${id}/messages`, {
+            method: 'POST',
+            body: JSON.stringify({ message }),
+        });
+    },
+};
+
 const api = {
     auth: authApi,
     properties: propertiesApi,
@@ -662,6 +714,7 @@ const api = {
     notifications: notificationsApi,
     documents: documentsApi,
     depreciation: depreciationApi,
+    tickets: ticketsApi,
 };
 
 export default api;

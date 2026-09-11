@@ -195,7 +195,7 @@ export default function UserDetail({ userId, isFullAdmin }: { userId: string; is
           </TabsContent>
 
           <TabsContent value="properties" className="mt-0"><PropertiesTab userId={userId} /></TabsContent>
-          <TabsContent value="transactions" className="mt-0"><TransactionsTab userId={userId} /></TabsContent>
+          <TabsContent value="transactions" className="mt-0"><TransactionsTab userId={userId} isFullAdmin={isFullAdmin} /></TabsContent>
           <TabsContent value="documents" className="mt-0"><DocumentsTab userId={userId} /></TabsContent>
           <TabsContent value="loans" className="mt-0"><LoansTab userId={userId} /></TabsContent>
           <TabsContent value="support" className="mt-0"><SupportTab userId={userId} /></TabsContent>

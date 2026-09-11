@@ -83,6 +83,7 @@ class SignupView(PublicView):
         data = request.data
         name = (data.get('name') or '').strip()
         email = (data.get('email') or '').strip().lower()
+        phone = (data.get('phone') or '').strip()
         password = data.get('password') or ''
         role = data.get('role') or 'staff'
 
@@ -100,6 +101,14 @@ class SignupView(PublicView):
             except ValidationError:
                 errors.append({'field': 'email', 'message': 'Please enter a valid email'})
 
+        # Required so the OCR inbound-email address (below) has a real phone
+        # number to be based on, not just a fallback.
+        phone_digits = re.sub(r'\D', '', phone)
+        if not phone:
+            errors.append({'field': 'phone', 'message': 'Phone number is required'})
+        elif len(phone_digits) < 8:
+            errors.append({'field': 'phone', 'message': 'Please enter a valid phone number'})
+
         if not password:
             errors.append({'field': 'password', 'message': 'Password is required'})
         else:
@@ -114,12 +123,19 @@ class SignupView(PublicView):
         user = User.objects.create(
             name=name,
             email=email,
+            phone=phone,
             password_hash=hash_password(password),
             role=role,
             unique_id=generate_unique_id(role),
             account_status='active',
         )
-        user.inbound_email = generate_inbound_email(user.id)
+        # Base the inbound OCR address on the phone number just collected;
+        # fall back to the UUID-derived form only on the rare chance that
+        # phone (once digits-only) collides with an existing user's address.
+        inbound_email = generate_inbound_email(phone=phone, user_id=user.id)
+        if User.objects.filter(inbound_email=inbound_email).exclude(id=user.id).exists():
+            inbound_email = generate_inbound_email(user_id=user.id)
+        user.inbound_email = inbound_email
         user.save(update_fields=['inbound_email'])
 
         access_token = generate_access_token(user.id)
