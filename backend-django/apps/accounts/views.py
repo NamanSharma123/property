@@ -22,7 +22,7 @@ from apps.common.views import ProtectedView, PublicView
 
 from .authentication import generate_access_token, generate_refresh_token
 from .inbound_email import generate_inbound_email
-from .models import PasswordResetToken, Session, User
+from .models import Mailbox, PasswordResetToken, Session, User
 from .serializers import format_session, format_user
 
 BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz'
@@ -133,10 +133,16 @@ class SignupView(PublicView):
         # fall back to the UUID-derived form only on the rare chance that
         # phone (once digits-only) collides with an existing user's address.
         inbound_email = generate_inbound_email(phone=phone, user_id=user.id)
-        if User.objects.filter(inbound_email=inbound_email).exclude(id=user.id).exists():
+        if Mailbox.objects.filter(email_address=inbound_email).exists():
             inbound_email = generate_inbound_email(user_id=user.id)
         user.inbound_email = inbound_email
         user.save(update_fields=['inbound_email'])
+        # Mailbox is the source of truth inbound ingestion actually queries
+        # (see apps.email_inbox) — user.inbound_email above is kept only as
+        # a denormalized read path for the admin panel/API responses.
+        Mailbox.objects.create(
+            user=user, email_address=inbound_email, alias=inbound_email.split('@', 1)[0],
+        )
 
         access_token = generate_access_token(user.id)
         refresh_token = generate_refresh_token()

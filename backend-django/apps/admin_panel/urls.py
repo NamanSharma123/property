@@ -43,6 +43,7 @@ urlpatterns = [
     path('admin/ocr/documents/<uuid:document_id>', views_ocr.AdminOcrDocumentDetailView.as_view()),
     path('admin/ocr/documents/<uuid:document_id>/approve', views_ocr.AdminOcrApproveView.as_view()),
     path('admin/ocr/documents/<uuid:document_id>/reject', views_ocr.AdminOcrRejectView.as_view()),
+    path('admin/ocr/documents/<uuid:document_id>/reprocess', views_ocr.AdminOcrReprocessView.as_view()),
     path('admin/ocr/bulk-approve', views_ocr.AdminOcrBulkApproveView.as_view()),
     path('admin/ocr/bulk-reject', views_ocr.AdminOcrBulkRejectView.as_view()),
     path('admin/ocr/extracted-data/<uuid:extracted_id>', views_ocr.AdminExtractedDataUpdateView.as_view()),

@@ -140,6 +140,50 @@ class PasswordResetToken(TimeStampedModel):
         return self.used_at is None and self.expires_at > timezone.now()
 
 
+class Mailbox(TimeStampedModel):
+    """
+    The application-level assigned email alias — "Unique Email ID" spec.
+    One row per user, formalizing what used to live only as the free-text
+    User.inbound_email column: a real record with its own status, so an
+    alias can be disabled/rotated without touching the User row, and so
+    inbound-email matching (apps.email_inbox) has one clear source of
+    truth to query instead of string-matching against User.
+
+    IMPORTANT — there is no physical mailbox per user. `email_address` is
+    a logical alias only; every alias's mail actually lands in one real,
+    central mailbox (an AWS SES-receiving domain today — see
+    INBOUND_EMAIL_DOMAIN). The inbound webhook resolves which alias an
+    email was really addressed to (Delivered-To / X-Original-To / To,
+    since providers don't reliably preserve a plain To header) and looks
+    it up here to find the owning user — see
+    apps.email_inbox.views.EmailInboundWebhookView.
+
+    User.inbound_email is kept in sync as a denormalized read path (the
+    admin panel and API responses already read it directly) — this table
+    is the write path and the one recipient-matching actually queries.
+    """
+    STATUS_CHOICES = [('active', 'active'), ('disabled', 'disabled')]
+
+    user = models.OneToOneField(
+        'accounts.User', on_delete=models.CASCADE, db_column='user_id', related_name='mailbox'
+    )
+    email_address = models.CharField(max_length=255, unique=True)
+    # The local part of email_address (before the @) — split out so
+    # ingestion/admin code doesn't have to keep re-parsing the address.
+    alias = models.CharField(max_length=255)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+
+    class Meta:
+        db_table = 'mailboxes'
+        indexes = [
+            models.Index(fields=['email_address'], name='idx_mailboxes_email'),
+            models.Index(fields=['status'], name='idx_mailboxes_status'),
+        ]
+
+    def __str__(self):
+        return self.email_address
+
+
 class ActivityLog(CreatedModel):
     user = models.ForeignKey('accounts.User', on_delete=models.CASCADE, db_column='user_id')
     action = models.CharField(max_length=50)

@@ -1,13 +1,16 @@
 """
 OCR Review Panel admin views (Pending Review / Processed / Failed tabs) on
-top of apps.ocr.Document/ExtractedData/DocumentLineItem, plus the OCR
-Template registry (informational/toggleable — see apps.ocr.models.OcrTemplate
-docstring for why it doesn't actually drive parsing).
+top of apps.ocr.Document/OCRJob/ExtractedData/DocumentLineItem/Review, plus
+the OCR Template registry (informational/toggleable — see
+apps.ocr.models.OcrTemplate docstring for why it doesn't actually drive
+parsing).
 
 Listing/preview reuse apps.admin_panel.views_documents (AdminDocumentListView
 filtered by ?status=, AdminDocumentViewUrlView) rather than duplicating them
 — this module only adds what's OCR-review-specific: the extracted-field
-detail view, approve/reject (+ bulk), and per-field corrections.
+detail view (scoped to the latest OCRJob, full attempt history alongside
+it), approve/reject (+ bulk, each leaving a Review row), reprocess
+(re-OCR — a new OCRJob attempt), and per-field corrections.
 """
 from datetime import date as date_cls
 from decimal import Decimal, InvalidOperation
@@ -17,7 +20,7 @@ from rest_framework.response import Response
 
 from apps.common.exceptions import error_response
 from apps.common.utils import coerce_date, model_row, to_snake
-from apps.ocr.models import Document, DocumentLineItem, ExtractedData, OcrTemplate
+from apps.ocr.models import Document, DocumentLineItem, ExtractedData, OCRJob, OcrTemplate, Review
 from apps.properties.models import Property
 from apps.transactions.models import Transaction
 from apps.transactions.serializers import transaction_row
@@ -32,8 +35,19 @@ class AdminOcrDocumentDetailView(AdminProtectedView):
         if not document:
             return error_response('Document not found', 404)
 
-        extracted = ExtractedData.objects.filter(document_id=document_id).order_by('field_name')
-        line_items = DocumentLineItem.objects.filter(document_id=document_id).order_by('line_number', 'created_at')
+        jobs = list(OCRJob.objects.filter(document_id=document_id).order_by('-attempt_number'))
+        latest_job = jobs[0] if jobs else None
+
+        # Scoped to the latest attempt only — a document that's been
+        # reprocessed would otherwise show every attempt's line items
+        # mixed together. Pre-OCRJob rows (ocr_job is null) still show for
+        # documents that predate this, or came from the direct-upload flow.
+        if latest_job:
+            extracted = ExtractedData.objects.filter(document_id=document_id, ocr_job=latest_job).order_by('field_name')
+            line_items = DocumentLineItem.objects.filter(document_id=document_id, ocr_job=latest_job).order_by('line_number', 'created_at')
+        else:
+            extracted = ExtractedData.objects.filter(document_id=document_id, ocr_job__isnull=True).order_by('field_name')
+            line_items = DocumentLineItem.objects.filter(document_id=document_id, ocr_job__isnull=True).order_by('line_number', 'created_at')
 
         row = model_row(
             document,
@@ -43,8 +57,49 @@ class AdminOcrDocumentDetailView(AdminProtectedView):
         )
         row['extractedData'] = [model_row(e) for e in extracted]
         row['lineItems'] = [model_row(li) for li in line_items]
+        row['ocrJobs'] = [model_row(j) for j in jobs]
+        row['reviews'] = [
+            model_row(r, reviewer_name=r.reviewer.name if r.reviewer_id else None)
+            for r in Review.objects.filter(document_id=document_id).select_related('reviewer').order_by('-created_at')
+        ]
 
         return Response({'success': True, 'data': {'document': row}})
+
+
+class AdminOcrReprocessView(AdminProtectedView):
+    """POST /api/admin/ocr/documents/<id>/reprocess — re-OCR spec
+    requirement: "an authorized user/admin to request re-OCR ... the new
+    OCR attempt must create a new OCRJob". Runs a fresh OCR attempt against
+    the same file and leaves the document 'pending' for review — deliberately
+    does NOT auto-create a transaction the way the first automatic email
+    pass can; a reprocess exists because the result was wrong, so a human
+    reviews the new attempt (via approve/reject) before it's trusted."""
+
+    def post(self, request, document_id):
+        from apps.email_inbox.processing import run_ocr_extraction
+
+        document = Document.objects.filter(id=document_id).first()
+        if not document:
+            return error_response('Document not found', 404)
+
+        job = run_ocr_extraction(document, triggered_by=request.user, config=request.data.get('config') or {})
+
+        Review.objects.create(
+            document=document, ocr_job=job, reviewer=request.user,
+            status='reprocess_requested', notes=request.data.get('reason') or None,
+            reviewed_at=timezone.now(),
+        )
+
+        log_admin_action(request.user, 'ocr.reprocess', request=request, entity_type='document',
+                          entity_id=document.id, new_value={'ocrJobId': str(job.id), 'attempt': job.attempt_number, 'status': job.status})
+
+        return Response({
+            'success': True,
+            'data': {'document': model_row(document), 'ocrJob': model_row(job)},
+            'message': f'Re-OCR attempt #{job.attempt_number} {job.status}' + (
+                ' — review the new result before approving.' if job.status == 'completed' else f': {job.error_message}'
+            ),
+        })
 
 
 def _create_transaction_from_document(document, request, corrections):
@@ -104,6 +159,12 @@ class AdminOcrApproveView(AdminProtectedView):
         document.reviewed_at = timezone.now()
         document.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
 
+        latest_job = OCRJob.objects.filter(document=document).order_by('-attempt_number').first()
+        Review.objects.create(
+            document=document, ocr_job=latest_job, reviewer=request.user,
+            status='approved', reviewed_at=timezone.now(),
+        )
+
         log_admin_action(request.user, 'ocr.approve', request=request, entity_type='document',
                           entity_id=document.id, new_value={'transactionCreated': bool(transaction)})
 
@@ -125,11 +186,18 @@ class AdminOcrRejectView(AdminProtectedView):
         if not document:
             return error_response('Document not found', 404)
 
+        reason = request.data.get('reason') or 'Rejected in admin review'
         document.status = 'failed'
-        document.error_message = request.data.get('reason') or 'Rejected in admin review'
+        document.error_message = reason
         document.reviewed_by = request.user
         document.reviewed_at = timezone.now()
         document.save(update_fields=['status', 'error_message', 'reviewed_by', 'reviewed_at'])
+
+        latest_job = OCRJob.objects.filter(document=document).order_by('-attempt_number').first()
+        Review.objects.create(
+            document=document, ocr_job=latest_job, reviewer=request.user,
+            status='rejected', notes=reason, reviewed_at=timezone.now(),
+        )
 
         log_admin_action(request.user, 'ocr.reject', request=request, entity_type='document', entity_id=document.id)
 
@@ -145,6 +213,10 @@ class AdminOcrBulkApproveView(AdminProtectedView):
         updated = Document.objects.filter(id__in=ids).update(
             status='completed', reviewed_by=request.user, reviewed_at=timezone.now()
         )
+        Review.objects.bulk_create([
+            Review(document_id=doc_id, reviewer=request.user, status='approved', reviewed_at=timezone.now())
+            for doc_id in ids
+        ])
         log_admin_action(request.user, 'ocr.bulk_approve', request=request, entity_type='document', new_value={'ids': ids})
         return Response({'success': True, 'message': f'{updated} document(s) approved'})
 
@@ -158,6 +230,10 @@ class AdminOcrBulkRejectView(AdminProtectedView):
         updated = Document.objects.filter(id__in=ids).update(
             status='failed', reviewed_by=request.user, reviewed_at=timezone.now()
         )
+        Review.objects.bulk_create([
+            Review(document_id=doc_id, reviewer=request.user, status='rejected', reviewed_at=timezone.now())
+            for doc_id in ids
+        ])
         log_admin_action(request.user, 'ocr.bulk_reject', request=request, entity_type='document', new_value={'ids': ids})
         return Response({'success': True, 'message': f'{updated} document(s) rejected'})
 

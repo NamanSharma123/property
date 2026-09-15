@@ -183,11 +183,41 @@ export interface ExtractedDataField {
     validation_status: string | null;
 }
 
+export interface OcrJob {
+    id: string;
+    document_id: string;
+    attempt_number: number;
+    provider: string | null;
+    status: 'queued' | 'processing' | 'completed' | 'failed';
+    confidence: number | null;
+    error_message: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+    triggered_by: string | null;
+    created_at: string;
+}
+
+export interface OcrReview {
+    id: string;
+    document_id: string;
+    ocr_job_id: string | null;
+    reviewer_id: string | null;
+    reviewer_name: string | null;
+    status: 'pending' | 'approved' | 'rejected' | 'reprocess_requested';
+    notes: string | null;
+    reviewed_at: string | null;
+    created_at: string;
+}
+
 export interface OcrDocumentDetail extends AdminDocument {
     ocr_raw_text: string | null;
     error_message: string | null;
     extractedData: ExtractedDataField[];
     lineItems: Record<string, unknown>[];
+    // Every OCR attempt against this document, newest first — the re-OCR
+    // history the Unique Email ID spec asks for (see apps.ocr.models.OCRJob).
+    ocrJobs: OcrJob[];
+    reviews: OcrReview[];
 }
 
 export interface OcrTemplate {
@@ -201,13 +231,32 @@ export interface OcrTemplate {
     updated_at: string;
 }
 
+export interface EmailAttachment {
+    id: string;
+    email_message_id: string;
+    file_name: string | null;
+    file_url: string;
+    content_type: string | null;
+    file_size: number | null;
+    document_id: string | null;
+}
+
 export interface EmailMessage {
     id: string;
     sender: string;
     receiver: string;
+    // Which recipient header actually matched a Mailbox — see
+    // apps.email_inbox.views._resolve_recipient.
+    resolved_via: 'delivered-to' | 'x-original-to' | 'to' | 'legacy' | null;
     subject: string | null;
+    message_id: string | null;
+    cc: string[];
+    bcc: string[];
+    // Legacy single-attachment fields — a message may have several real
+    // attachments instead, see `attachments` below.
     attachment_url: string | null;
     attachment_name: string | null;
+    attachments: EmailAttachment[];
     received_at: string;
     user_id: string | null;
     user_name: string | null;
@@ -488,6 +537,11 @@ export const adminApi = {
         },
         async reject(id: string, reason?: string) {
             return apiFetch(`/api/admin/ocr/documents/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+        },
+        async reprocess(id: string, reason?: string) {
+            return apiFetch<{ document: Record<string, unknown>; ocrJob: OcrJob }>(
+                `/api/admin/ocr/documents/${id}/reprocess`, { method: 'POST', body: JSON.stringify({ reason }) }
+            );
         },
         async bulkApprove(ids: string[]) {
             return apiFetch(`/api/admin/ocr/bulk-approve`, { method: 'POST', body: JSON.stringify({ ids }) });

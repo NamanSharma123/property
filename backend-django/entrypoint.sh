@@ -8,4 +8,9 @@ set -e
 
 python manage.py migrate --noinput
 
+# Idempotent backfill for users that predate the Mailbox model (only
+# creates a row for users that don't have one yet) — same "safe on every
+# deploy" reasoning as migrate above.
+python manage.py backfill_mailboxes
+
 exec gunicorn config.wsgi:application --bind 0.0.0.0:5000 --workers 4 --timeout 60

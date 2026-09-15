@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { FileText, Check, X, Pencil } from "lucide-react";
+import { FileText, Check, X, Pencil, RotateCcw, History } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ export default function ReviewDocumentDialog({
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
   const [createTx, setCreateTx] = useState(false);
   const [txAmount, setTxAmount] = useState("");
   const [txDate, setTxDate] = useState("");
@@ -85,6 +86,20 @@ export default function ReviewDocumentDialog({
       onDecided();
     } else {
       toast.error(res.error || "Reject failed");
+    }
+  };
+
+  const reprocess = async () => {
+    if (!documentId) return;
+    setReprocessing(true);
+    const res = await adminApi.ocr.reprocess(documentId, "Admin requested re-OCR");
+    setReprocessing(false);
+    if (res.success) {
+      toast.success(res.message || "Re-OCR complete — review the new result");
+      const refreshed = await adminApi.ocr.getDocument(documentId);
+      if (refreshed.success && refreshed.data) setDoc(refreshed.data.document);
+    } else {
+      toast.error(res.error || "Re-OCR failed");
     }
   };
 
@@ -172,7 +187,43 @@ export default function ReviewDocumentDialog({
                 <button disabled={busy} onClick={reject} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                   <X size={14} /> Reject
                 </button>
+                <button
+                  disabled={reprocessing}
+                  onClick={reprocess}
+                  title="Run OCR again on this file — creates a new attempt, doesn't touch the current one"
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <RotateCcw size={14} className={reprocessing ? "animate-spin" : ""} /> Re-OCR
+                </button>
               </div>
+
+              {doc.ocrJobs && doc.ocrJobs.length > 0 && (
+                <div className="mt-3 border-t border-gray-100 pt-3">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-1.5">
+                    <History size={13} /> Attempt history
+                  </div>
+                  <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                    {doc.ocrJobs.map((job) => (
+                      <div key={job.id} className="flex items-center justify-between text-xs text-gray-500 px-2 py-1 rounded-md bg-gray-50">
+                        <span>#{job.attempt_number} · {job.provider || "—"}</span>
+                        <span className="flex items-center gap-2">
+                          {job.confidence != null && <span>{Math.round(job.confidence)}%</span>}
+                          <Badge
+                            variant="outline"
+                            className={
+                              job.status === "completed" ? "bg-green-50 text-green-700 border-green-200"
+                                : job.status === "failed" ? "bg-red-50 text-red-600 border-red-200"
+                                : "bg-gray-50 text-gray-500 border-gray-200"
+                            }
+                          >
+                            {job.status}
+                          </Badge>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

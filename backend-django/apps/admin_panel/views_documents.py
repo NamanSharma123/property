@@ -3,6 +3,7 @@ Cross-user Document Vault admin views, on top of apps.ocr.Document (no
 separate "documents" table — see Phase 1 plan notes on why).
 """
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework.response import Response
 
 from apps.common.exceptions import error_response
@@ -107,37 +108,37 @@ class AdminDocumentViewUrlView(AdminProtectedView):
 
 
 class AdminDocumentReprocessView(AdminProtectedView):
-    """POST /api/admin/documents/<id>/reprocess. OCR extraction itself runs
-    client-side (Tesseract, in the browser — see apps.ocr.views for where
-    results get posted back), so there is no server-side pipeline this can
-    invoke synchronously. This resets the document to 'pending' and clears
-    its prior OCR output, so it's picked up again the next time it's opened
-    for extraction (and shows up in the OCR Review Panel once that's built
-    in Phase 3) — it does not perform new OCR itself."""
+    """POST /api/admin/documents/<id>/reprocess — the Document Vault page's
+    reprocess button. Runs a real re-OCR attempt server-side (see
+    apps.email_inbox.processing.run_ocr_extraction, which creates a new
+    OCRJob with its own history — the re-OCR spec requirement), the same
+    work apps.admin_panel.views_ocr.AdminOcrReprocessView does for the OCR
+    Review Panel. Kept as its own endpoint/URL for backward compatibility
+    with this page's existing call site."""
     allow_support = False
 
     def post(self, request, document_id):
+        from apps.email_inbox.processing import run_ocr_extraction
+        from apps.ocr.models import Review
+
         document = Document.objects.filter(id=document_id).first()
         if not document:
             return error_response('Document not found', 404)
 
         old_status = document.status
-        document.status = 'pending'
-        document.ocr_raw_text = None
-        document.ocr_confidence = None
-        document.error_message = None
-        document.processing_started_at = None
-        document.processing_completed_at = None
-        document.save(update_fields=[
-            'status', 'ocr_raw_text', 'ocr_confidence', 'error_message',
-            'processing_started_at', 'processing_completed_at',
-        ])
+        job = run_ocr_extraction(document, triggered_by=request.user)
+
+        Review.objects.create(
+            document=document, ocr_job=job, reviewer=request.user,
+            status='reprocess_requested', reviewed_at=timezone.now(),
+        )
 
         log_admin_action(request.user, 'document.reprocess', request=request, entity_type='document',
-                          entity_id=document_id, old_value={'status': old_status}, new_value={'status': 'pending'})
+                          entity_id=document_id, old_value={'status': old_status},
+                          new_value={'ocrJobId': str(job.id), 'attempt': job.attempt_number, 'status': job.status})
 
         return Response({
             'success': True,
-            'data': {'document': model_row(document)},
-            'message': 'Document queued for reprocessing',
+            'data': {'document': model_row(document), 'ocrJob': model_row(job)},
+            'message': f'Re-OCR attempt #{job.attempt_number} {job.status}',
         })

@@ -168,7 +168,7 @@ export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean })
                 <TableCell>
                   <div className="flex items-center justify-end gap-1">
                     <button onClick={() => setMapping(m)} className="p-1.5 rounded-md text-gray-400 hover:text-primary hover:bg-gray-50" title="Map to user/property"><Link2 size={16} /></button>
-                    {m.user_id && m.attachment_url && !m.document_id && (
+                    {m.user_id && (m.attachment_url || m.attachments?.length > 0) && !m.document_id && (
                       <button onClick={() => convert(m)} className="p-1.5 rounded-md text-gray-400 hover:text-primary hover:bg-gray-50" title="Convert to document"><FileInput size={16} /></button>
                     )}
                   </div>

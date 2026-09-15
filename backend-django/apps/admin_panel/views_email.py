@@ -23,7 +23,7 @@ from .utils import log_admin_action
 class AdminEmailInboxListView(AdminProtectedView):
     def get(self, request):
         params = request.query_params
-        qs = EmailMessage.objects.select_related('user', 'property')
+        qs = EmailMessage.objects.select_related('user', 'property').prefetch_related('attachments')
 
         if params.get('status'):
             qs = qs.filter(status=params['status'])
@@ -48,7 +48,7 @@ class AdminEmailInboxListView(AdminProtectedView):
 
 class AdminEmailDetailView(AdminProtectedView):
     def get(self, request, message_id):
-        msg = EmailMessage.objects.select_related('user', 'property').filter(id=message_id).first()
+        msg = EmailMessage.objects.select_related('user', 'property').prefetch_related('attachments').filter(id=message_id).first()
         if not msg:
             return error_response('Email message not found', 404)
         return Response({'success': True, 'data': {'emailMessage': email_message_row(msg)}})
@@ -95,43 +95,74 @@ class AdminEmailMapView(AdminProtectedView):
 
 class AdminEmailConvertView(AdminProtectedView):
     """POST /api/admin/email-inbox/<id>/convert — turns a mapped message's
-    attachment into a Document, so it enters the normal OCR review flow
-    (Documents list / OCR Review Panel) instead of a separate pipeline."""
+    attachment(s) into Document row(s), so they enter the normal OCR
+    review flow (Documents list / OCR Review Panel) without running OCR.
+    A manual fallback alongside the automatic pipeline in
+    apps.email_inbox.processing (which does this AND runs OCR AND creates
+    transactions in one step) — useful when an admin just wants the file
+    filed as a document without touching the automated OCR job."""
     allow_support = False
 
     def post(self, request, message_id):
-        msg = EmailMessage.objects.filter(id=message_id).first()
+        msg = EmailMessage.objects.prefetch_related('attachments').filter(id=message_id).first()
         if not msg:
             return error_response('Email message not found', 404)
         if not msg.user_id:
             return error_response('Map this message to a user before converting it', 400)
-        if not msg.attachment_url:
+
+        attachments = list(msg.attachments.filter(document__isnull=True))
+        if not attachments and not msg.attachment_url:
             return error_response('This message has no attachment to convert', 400)
-        if msg.document_id:
+        if not attachments and msg.document_id:
             return error_response('This message was already converted', 400)
 
-        document = Document.objects.create(
-            owner_id=msg.user_id,
-            property_id=msg.property_id,
-            file_name=msg.attachment_name or (msg.subject or 'email-attachment'),
-            file_url=msg.attachment_url,
-            file_type='application/octet-stream',
-            file_size=0,
-            status='pending',
-        )
-        msg.document = document
+        documents = []
+        if attachments:
+            for att in attachments:
+                document = Document.objects.create(
+                    owner_id=msg.user_id,
+                    property_id=msg.property_id,
+                    file_name=att.file_name or (msg.subject or 'email-attachment'),
+                    file_url=att.file_url,
+                    file_type=att.content_type or 'application/octet-stream',
+                    file_size=att.file_size or 0,
+                    status='pending',
+                )
+                att.document = document
+                att.save(update_fields=['document'])
+                documents.append(document)
+        else:
+            # Legacy rows with no EmailAttachment rows at all.
+            document = Document.objects.create(
+                owner_id=msg.user_id,
+                property_id=msg.property_id,
+                file_name=msg.attachment_name or (msg.subject or 'email-attachment'),
+                file_url=msg.attachment_url,
+                file_type='application/octet-stream',
+                file_size=0,
+                status='pending',
+            )
+            documents.append(document)
+
+        if not msg.document_id:
+            msg.document = documents[0]
         msg.status = 'processed'
         msg.save(update_fields=['document', 'status'])
 
-        log_activity(msg.user_id, 'document_create_from_email', request=request,
-                     resource_type='document', resource_id=document.id, success=True)
+        for document in documents:
+            log_activity(msg.user_id, 'document_create_from_email', request=request,
+                         resource_type='document', resource_id=document.id, success=True)
         log_admin_action(request.user, 'email.convert', request=request, entity_type='email_message',
-                          entity_id=msg.id, new_value={'documentId': str(document.id)})
+                          entity_id=msg.id, new_value={'documentIds': [str(d.id) for d in documents]})
 
         return Response({
             'success': True,
-            'data': {'emailMessage': email_message_row(msg), 'documentId': str(document.id)},
-            'message': 'Converted to a document — it now appears in the Documents list and OCR Review Panel',
+            'data': {
+                'emailMessage': email_message_row(msg),
+                'documentId': str(documents[0].id),
+                'documentIds': [str(d.id) for d in documents],
+            },
+            'message': f'Converted {len(documents)} attachment(s) to document(s) — they now appear in the Documents list and OCR Review Panel',
         })
 
 
