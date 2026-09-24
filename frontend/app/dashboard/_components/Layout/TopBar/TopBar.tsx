@@ -33,7 +33,7 @@ const TopBar: React.FC<TopBarProps> = ({
   const { notifications, unreadCount, isLoading, markAsRead, markAllAsRead } = useNotificationsSWR();
 
   const badgeValue = inboundEmail || uniqueId;
-  const badgeLabel = inboundEmail ? 'OCR Email' : 'Unique ID';
+  const badgeLabel = inboundEmail ? 'Unique ID/OCR Email' : 'Unique ID';
   const displayUniqueId = `${badgeLabel} : ${badgeValue}`;
   const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase();
 
