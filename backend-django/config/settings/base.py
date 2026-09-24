@@ -168,12 +168,24 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
 # receipt rules + this domain's MX records, which is a later phase.
 INBOUND_EMAIL_DOMAIN = config('INBOUND_EMAIL_DOMAIN', default='properlymail.com.au')
 
-# Shared-secret gate on POST /api/email/inbound (apps.email_inbox) — the
-# placeholder auth for the SES-inbound webhook until it's replaced with
-# real SNS message-signature verification when that integration is wired.
-# Empty by default so the endpoint is closed (rejects everything) until a
-# secret is explicitly configured.
+# Shared-secret gate on POST /api/email/inbound (apps.email_inbox) — for
+# manual/test calls only. Empty by default so the endpoint is closed
+# (rejects everything) until a secret is explicitly configured.
 INBOUND_EMAIL_WEBHOOK_SECRET = config('INBOUND_EMAIL_WEBHOOK_SECRET', default='')
+
+# The real SES/SNS inbound path (apps.email_inbox.ses_adapter), auth'd by
+# SNS message-signature verification instead of a shared secret. SES email
+# RECEIVING is only available in a handful of AWS regions (us-east-1,
+# us-west-2, eu-west-1 as of writing) — not necessarily the region the app
+# itself runs in — so the S3 bucket SES delivers raw mail into typically
+# lives in a different region than DOCUMENTS_S3_BUCKET.
+SES_INBOUND_S3_BUCKET = config('SES_INBOUND_S3_BUCKET', default='')
+SES_INBOUND_S3_REGION = config('SES_INBOUND_S3_REGION', default='us-east-1')
+# Optional extra allowlist check alongside signature verification — reject
+# a (validly-signed) notification from any topic other than this one, once
+# you know the real topic's ARN. Empty means "don't check" (signature
+# verification alone still gates the endpoint).
+SES_INBOUND_SNS_TOPIC_ARN = config('SES_INBOUND_SNS_TOPIC_ARN', default='')
 
 # Email (password reset). Falls back to Django's console backend (prints to
 # stdout instead of sending) when no SMTP password is configured, so local
