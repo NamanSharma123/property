@@ -11,7 +11,7 @@ import { SWRProvider } from '@/components/providers/swr-provider';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
-  const [session, setSession] = useState<{ email: string; name?: string; uniqueId?: string } | null>(null);
+  const [session, setSession] = useState<{ email: string; name?: string; uniqueId?: string; inboundEmail?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -109,6 +109,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             userName={session.name}
             userEmail={session.email}
             uniqueId={session.uniqueId}
+            inboundEmail={session.inboundEmail}
           />
 
           {/* Page Content */}

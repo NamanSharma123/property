@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [session, setSession] = useState<{ email: string; name: string; uniqueId: string } | null>(null);
+  const [session, setSession] = useState<{ email: string; name: string; uniqueId: string; inboundEmail?: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export default function DashboardPage() {
     <div>
       <Dashboard
         userName={session.name}
-        uniqueId={session.uniqueId}
+        inboundEmail={session.inboundEmail}
       />
     </div>
   );

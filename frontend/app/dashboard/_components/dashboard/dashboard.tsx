@@ -9,10 +9,13 @@ import { DashboardSkeleton } from "@/components/ui/skeletons";
 
 interface DashboardProps {
   userName?: string;
-  uniqueId?: string;
+  /** The unique OCR inbound-email alias — the address a property manager
+   *  should actually be told to email statements to (the account's
+   *  internal uniqueId reference is not an email address at all). */
+  inboundEmail?: string;
 }
 
-const Dashboard = ({ userName = 'User', uniqueId = 'ID-0000' }: DashboardProps) => {
+const Dashboard = ({ userName = 'User', inboundEmail }: DashboardProps) => {
   const router = useRouter();
   const { summary: data, isLoading } = useDashboardSWR();
 
@@ -195,7 +198,8 @@ const Dashboard = ({ userName = 'User', uniqueId = 'ID-0000' }: DashboardProps) 
               <div className="flex-1">
                 <h4 className="font-semibold mb-1">Rent Summary</h4>
                 <p className="text-sm text-muted-foreground mb-3">
-                  Advise your property manager to email monthly Rental Summary to {uniqueId}
+                  Advise your property manager to email monthly Rental Summary to{' '}
+                  <span className="font-medium text-foreground">{inboundEmail || 'your unique OCR email (see Settings)'}</span>
                 </p>
                 <Button size="sm" variant="outline" className="bg-yellow-400 hover:bg-yellow-500 text-black">
                   Email Now

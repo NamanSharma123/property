@@ -13,6 +13,11 @@ interface TopBarProps {
   userRole?: string;
   userEmail?: string;
   uniqueId?: string;
+  /** The unique OCR inbound-email alias (see the "Unique Email ID" spec) —
+   *  what a user actually forwards statements/receipts to. This is what
+   *  the top badge shows, since it's the thing users need to copy/use day
+   *  to day; uniqueId (the internal STA-xxxx reference) is secondary. */
+  inboundEmail?: string;
 }
 
 const TopBar: React.FC<TopBarProps> = ({
@@ -21,16 +26,19 @@ const TopBar: React.FC<TopBarProps> = ({
   userRole = 'Property Investor',
   userEmail = 'john.doe@email.com',
   uniqueId = 'ID-0000',
+  inboundEmail,
 }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const { notifications, unreadCount, isLoading, markAsRead, markAllAsRead } = useNotificationsSWR();
 
-  const displayUniqueId = `Unique ID : ${uniqueId}`;
+  const badgeValue = inboundEmail || uniqueId;
+  const badgeLabel = inboundEmail ? 'OCR Email' : 'Unique ID';
+  const displayUniqueId = `${badgeLabel} : ${badgeValue}`;
   const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase();
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(uniqueId);
+    navigator.clipboard.writeText(badgeValue);
   };
 
   const formatTimeAgo = (dateString: string) => {
