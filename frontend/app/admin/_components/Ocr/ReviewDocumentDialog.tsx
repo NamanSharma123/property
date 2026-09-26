@@ -36,7 +36,6 @@ export default function ReviewDocumentDialog({
   const [txDate, setTxDate] = useState("");
   const [txDescription, setTxDescription] = useState("");
   const [ownerProperties, setOwnerProperties] = useState<AdminProperty[]>([]);
-  const [propertiesLoaded, setPropertiesLoaded] = useState(false);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
 
   const unconvertedLineItems = (doc?.lineItems || []).filter((li) => !li.is_converted);
@@ -44,7 +43,6 @@ export default function ReviewDocumentDialog({
   useEffect(() => {
     if (!documentId || !open) return;
     setLoading(true);
-    setPropertiesLoaded(false);
     adminApi.ocr.getDocument(documentId).then((res) => {
       if (res.success && res.data) {
         setDoc(res.data.document);
@@ -53,13 +51,8 @@ export default function ReviewDocumentDialog({
             if (pres.success && pres.data) {
               setOwnerProperties(pres.data.properties);
               setSelectedPropertyId(res.data!.document.property_id || (pres.data.properties.length === 1 ? pres.data.properties[0].id : ""));
-            } else {
-              toast.error(pres.error || "Failed to load this user's properties");
             }
-            setPropertiesLoaded(true);
           });
-        } else {
-          setPropertiesLoaded(true);
         }
       } else {
         toast.error(res.error || "Failed to load document");
@@ -227,61 +220,52 @@ export default function ReviewDocumentDialog({
                 </div>
               )}
 
-              {propertiesLoaded && (
+              {ownerProperties.length > 0 && (
                 <div className="mt-3">
                   <label className="text-xs text-gray-500 mb-1 block">
                     Property {unconvertedLineItems.some((li) => !li.property_name) ? "(needed to resolve some line items)" : ""}
                   </label>
-                  {ownerProperties.length > 0 ? (
-                    <Select value={selectedPropertyId} onValueChange={setSelectedPropertyId}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select property…" /></SelectTrigger>
-                      <SelectContent>
-                        {ownerProperties.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-2">
-                      This user has no properties yet — add one to their account first, then reopen this document to pick it.
-                    </p>
-                  )}
+                  <Select value={selectedPropertyId} onValueChange={setSelectedPropertyId}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select property…" /></SelectTrigger>
+                    <SelectContent>
+                      {ownerProperties.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
 
-              {unconvertedLineItems.length > 0 ? (
+              {unconvertedLineItems.length > 0 && (
                 <div className="mt-3 border-t border-gray-100 pt-3">
                   <button
-                    disabled={busy || (propertiesLoaded && ownerProperties.length === 0)}
+                    disabled={busy}
                     onClick={approveLineItems}
-                    title={propertiesLoaded && ownerProperties.length === 0 ? "Add a property to this user first" : undefined}
                     className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                   >
                     <Check size={14} /> Approve & create {unconvertedLineItems.length} transaction{unconvertedLineItems.length === 1 ? "" : "s"}
                   </button>
                 </div>
-              ) : (
-                <div className="mt-3 border-t border-gray-100 pt-3">
-                  <label className="flex items-center gap-2 text-xs text-gray-600 mb-2">
-                    <Checkbox checked={createTx} onCheckedChange={(c) => setCreateTx(!!c)} />
-                    Create a transaction from this document
-                  </label>
-                  {createTx && (
-                    <div className="grid grid-cols-2 gap-2 mb-1">
-                      <Input placeholder="Amount" type="number" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} className="h-8 text-sm" />
-                      <Input placeholder="Date (YYYY-MM-DD)" value={txDate} onChange={(e) => setTxDate(e.target.value)} className="h-8 text-sm" />
-                      <Input placeholder="Description" value={txDescription} onChange={(e) => setTxDescription(e.target.value)} className="h-8 text-sm col-span-2" />
-                    </div>
-                  )}
-                </div>
               )}
 
-              <div className="flex gap-2 mt-2">
-                {unconvertedLineItems.length === 0 && (
-                  <button disabled={busy} onClick={approve} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
-                    <Check size={14} /> Approve{createTx && " & create"}
-                  </button>
+              <div className="mt-3 border-t border-gray-100 pt-3">
+                <label className="flex items-center gap-2 text-xs text-gray-600 mb-2">
+                  <Checkbox checked={createTx} onCheckedChange={(c) => setCreateTx(!!c)} />
+                  Create a transaction from this document
+                </label>
+                {createTx && (
+                  <div className="grid grid-cols-2 gap-2 mb-1">
+                    <Input placeholder="Amount" type="number" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} className="h-8 text-sm" />
+                    <Input placeholder="Date (YYYY-MM-DD)" value={txDate} onChange={(e) => setTxDate(e.target.value)} className="h-8 text-sm" />
+                    <Input placeholder="Description" value={txDescription} onChange={(e) => setTxDescription(e.target.value)} className="h-8 text-sm col-span-2" />
+                  </div>
                 )}
+              </div>
+
+              <div className="flex gap-2 mt-2">
+                <button disabled={busy} onClick={approve} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+                  <Check size={14} /> Approve{createTx && " & create"}
+                </button>
                 <button disabled={busy} onClick={reject} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                   <X size={14} /> Reject
                 </button>
