@@ -209,11 +209,30 @@ export interface OcrReview {
     created_at: string;
 }
 
+export interface DocumentLineItem {
+    id: string;
+    document_id: string;
+    ocr_job_id: string | null;
+    line_number: number | null;
+    property_name: string | null;
+    description: string;
+    category: string | null;
+    amount: string;
+    item_type: 'income' | 'expense';
+    included_tax: string | null;
+    confidence: number | null;
+    is_converted: boolean;
+    transaction_id: string | null;
+}
+
 export interface OcrDocumentDetail extends AdminDocument {
     ocr_raw_text: string | null;
     error_message: string | null;
     extractedData: ExtractedDataField[];
-    lineItems: Record<string, unknown>[];
+    // The real, per-item extracted data (amount/category/type included) —
+    // what the review UI should actually show and convert, as opposed to
+    // extractedData's description-only rows.
+    lineItems: DocumentLineItem[];
     // Every OCR attempt against this document, newest first — the re-OCR
     // history the Unique Email ID spec asks for (see apps.ocr.models.OCRJob).
     ocrJobs: OcrJob[];
@@ -534,6 +553,14 @@ export const adminApi = {
         },
         async approve(id: string, data?: { createTransaction?: boolean; propertyId?: string; categoryName?: string; amount?: number | string; date?: string; description?: string; type?: 'income' | 'expense' }) {
             return apiFetch(`/api/admin/ocr/documents/${id}/approve`, { method: 'POST', body: JSON.stringify(data || {}) });
+        },
+        // Creates one transaction per not-yet-converted extracted line item
+        // (each with its own real amount/category/type) instead of the
+        // single manually-typed transaction `approve` above creates.
+        async approveLineItems(id: string, propertyId?: string) {
+            return apiFetch<{ document: Record<string, unknown>; transactions: Record<string, unknown>[]; created: number; skipped: number }>(
+                `/api/admin/ocr/documents/${id}/approve-line-items`, { method: 'POST', body: JSON.stringify(propertyId ? { propertyId } : {}) }
+            );
         },
         async reject(id: string, reason?: string) {
             return apiFetch(`/api/admin/ocr/documents/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });

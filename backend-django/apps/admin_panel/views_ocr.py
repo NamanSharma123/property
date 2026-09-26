@@ -136,6 +136,115 @@ def _create_transaction_from_document(document, request, corrections):
     return transaction, None
 
 
+class AdminOcrApproveLineItemsView(AdminProtectedView):
+    """POST /api/admin/ocr/documents/<id>/approve-line-items — {propertyId?}.
+    A multi-line statement (e.g. a rental statement email with 9 charges)
+    OCR's into 9 DocumentLineItem rows, each with its own real amount —
+    AdminOcrApproveView's `createTransaction` only ever creates ONE
+    transaction from a single manually-typed amount, which is the wrong
+    shape for this. This creates one Transaction per not-yet-converted
+    line item from the latest OCR attempt, using each item's own
+    description/amount/category/type, and marks the document approved.
+
+    Property resolution per item: `propertyId` (if given) applies to every
+    item; otherwise each item's own extracted property_name is matched
+    against the document owner's properties; otherwise, if the owner has
+    exactly one property, that one is used. An item that still can't
+    resolve a property is left unconverted and reported, rather than
+    guessing wrong or silently dropping it."""
+
+    def post(self, request, document_id):
+        from apps.email_inbox.processing import _parse_flexible_date
+
+        document = Document.objects.filter(id=document_id).first()
+        if not document:
+            return error_response('Document not found', 404)
+
+        latest_job = OCRJob.objects.filter(document=document).order_by('-attempt_number').first()
+        line_items_qs = DocumentLineItem.objects.filter(document=document, is_converted=False)
+        line_items_qs = line_items_qs.filter(ocr_job=latest_job) if latest_job else line_items_qs.filter(ocr_job__isnull=True)
+        line_items = list(line_items_qs)
+
+        if not line_items:
+            return error_response('No unconverted line items on this document to create transactions from', 400)
+
+        override_property_id = request.data.get('propertyId')
+        if override_property_id and not Property.objects.filter(id=override_property_id, owner_id=document.owner_id).exists():
+            return error_response('Property not found for this document’s owner', 404)
+
+        owner_properties = list(Property.objects.filter(owner_id=document.owner_id).values('id', 'name'))
+        single_property_id = owner_properties[0]['id'] if len(owner_properties) == 1 else None
+
+        period_field = None
+        if latest_job:
+            period_field = ExtractedData.objects.filter(
+                document=document, ocr_job=latest_job, field_name='statement_period_to'
+            ).first()
+        fallback_date = (
+            (_parse_flexible_date(period_field.field_value) if period_field else None)
+            or date_cls.today().isoformat()
+        )
+
+        created = []
+        skipped = 0
+        for item in line_items:
+            property_id = override_property_id
+            if not property_id and item.property_name:
+                match = next((p for p in owner_properties if p['name'].strip().lower() == item.property_name.strip().lower()), None)
+                property_id = match['id'] if match else None
+            if not property_id:
+                property_id = single_property_id
+            if not property_id or item.amount <= 0:
+                skipped += 1
+                continue
+
+            transaction = Transaction.objects.create(
+                owner_id=document.owner_id,
+                property_id=property_id,
+                description=item.description or document.file_name,
+                amount=item.amount,
+                date=fallback_date,
+                type=item.item_type or 'expense',
+                category_name=item.category or None,
+                transaction_source='OCR Upload',
+                status='pending',
+                source_document_id=document.id,
+                created_by_id=request.user.id,
+            )
+            item.is_converted = True
+            item.transaction = transaction
+            item.save(update_fields=['is_converted', 'transaction'])
+            created.append(transaction)
+
+        if created:
+            document.status = 'completed'
+            document.reviewed_by = request.user
+            document.reviewed_at = timezone.now()
+            document.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
+
+            Review.objects.create(
+                document=document, ocr_job=latest_job, reviewer=request.user,
+                status='approved', reviewed_at=timezone.now(),
+                notes=f'{len(created)} transaction(s) created from line items' + (f'; {skipped} skipped (no property match)' if skipped else ''),
+            )
+
+        log_admin_action(request.user, 'ocr.approve_line_items', request=request, entity_type='document',
+                          entity_id=document.id, new_value={'created': len(created), 'skipped': skipped})
+
+        return Response({
+            'success': True,
+            'data': {
+                'document': model_row(document),
+                'transactions': [transaction_row(t) for t in created],
+                'created': len(created),
+                'skipped': skipped,
+            },
+            'message': (
+                f'Created {len(created)} transaction(s)' + (f'; {skipped} line item(s) skipped (no property match)' if skipped else '')
+            ) if created else 'No line items could be resolved to a property — none created',
+        }, status=200 if created else 400)
+
+
 class AdminOcrApproveView(AdminProtectedView):
     """POST /api/admin/ocr/documents/<id>/approve — {createTransaction?,
     propertyId?, categoryName?, amount?, date?, description?, type?}.
