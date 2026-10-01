@@ -2,9 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Search, Link2, FileInput, ChevronLeft, ChevronRight, PlayCircle, Loader2 } from "lucide-react";
+import { Search, Link2, FileInput, ChevronLeft, ChevronRight, PlayCircle, Loader2, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -66,6 +70,7 @@ export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean })
   const [total, setTotal] = useState(0);
   const [mapping, setMapping] = useState<EmailMessage | null>(null);
   const [runningJob, setRunningJob] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,6 +103,18 @@ export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean })
       load();
     } else {
       toast.error(res.error || "OCR job failed to run");
+    }
+  };
+
+  const remove = async (m: EmailMessage) => {
+    setBusyId(m.id);
+    const res = await adminApi.emailInbox.remove(m.id);
+    setBusyId(null);
+    if (res.success) {
+      toast.success(res.message || "Email removed");
+      load();
+    } else {
+      toast.error(res.error || "Remove failed");
     }
   };
 
@@ -170,6 +187,27 @@ export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean })
                     <button onClick={() => setMapping(m)} className="p-1.5 rounded-md text-gray-400 hover:text-primary hover:bg-gray-50" title="Map to user/property"><Link2 size={16} /></button>
                     {m.user_id && (m.attachment_url || m.attachments?.length > 0) && !m.document_id && (
                       <button onClick={() => convert(m)} className="p-1.5 rounded-md text-gray-400 hover:text-primary hover:bg-gray-50" title="Convert to document"><FileInput size={16} /></button>
+                    )}
+                    {isFullAdmin && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button disabled={busyId === m.id} className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40" title="Remove email">
+                            <Trash2 size={16} />
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Remove this email?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {m.subject || m.sender} will be permanently removed from the inbox. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => remove(m)}>Remove</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     )}
                   </div>
                 </TableCell>

@@ -605,6 +605,9 @@ export const adminApi = {
                 { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) }
             );
         },
+        async remove(id: string) {
+            return adminFetch(`/api/admin/email-inbox/${id}`, { method: 'DELETE' });
+        },
     },
 
     support: {
