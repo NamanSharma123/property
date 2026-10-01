@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ResponsiveSidebar } from "@/app/dashboard/_components/Layout/SideBar/ResponsiveSidebar"
 import TopBar from "@/app/dashboard/_components/Layout/TopBar/TopBar";
 import { getSession } from '@/lib/auth';
+import { clearTokens } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Toaster } from '@/components/ui/sonner';
 import { SWRProvider } from '@/components/providers/swr-provider';
@@ -24,10 +25,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (!sessionData) {
           router.push('/auth/login');
         } else if (sessionData.role === 'admin' || sessionData.role === 'manager') {
-          // User portal is for regular users only — admins belong in /admin.
-          // Without this, an admin hitting hard-refresh on /dashboard stays
-          // logged into the wrong panel (and vice versa confusion).
-          router.replace('/admin/dashboard');
+          // STRICT: user panel is staff-only. An admin-role token in the
+          // user slot can only be a stale pre-fix shared token (post-fix
+          // admin logins never write here) — drop it so it can never
+          // auto-login anyone into the wrong panel, then ask for a fresh
+          // staff login. The real admin session (separate admin key) is
+          // untouched, so an open /admin tab keeps working.
+          clearTokens('user');
+          router.replace('/auth/login');
         } else {
           setSession(sessionData);
         }

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { AdminSidebar } from '@/app/admin/_components/Layout/AdminSidebar';
 import AdminTopBar from '@/app/admin/_components/Layout/AdminTopBar';
 import { getSession } from '@/lib/auth';
+import { clearTokens } from '@/lib/api';
 import { Toaster } from '@/components/ui/sonner';
 import { SWRProvider } from '@/components/providers/swr-provider';
 import { AdminSessionContext, AdminSession } from '@/app/admin/_components/AdminSessionContext';
@@ -28,6 +29,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // same browser (different localStorage key) can never leak in here.
         const sessionData = await getSession('admin');
         if (!sessionData || (sessionData.role !== 'admin' && sessionData.role !== 'manager')) {
+          // Mirror of the dashboard self-heal: a staff token in the admin
+          // slot is stale/invalid — drop it so it can't linger, then ask
+          // for a fresh admin login. The user tab (separate key) is untouched.
+          clearTokens('admin');
           router.push('/admin/login');
           return;
         }
