@@ -13,4 +13,10 @@ python manage.py migrate --noinput
 # deploy" reasoning as migrate above.
 python manage.py backfill_mailboxes
 
+# Idempotent: moves any user still on a stale INBOUND_EMAIL_DOMAIN (e.g. a
+# leftover placeholder address from before the real domain was
+# provisioned) onto the currently configured one. A no-op once everyone's
+# already on the current domain.
+python manage.py migrate_stale_inbound_emails
+
 exec gunicorn config.wsgi:application --bind 0.0.0.0:5000 --workers 4 --timeout 60
