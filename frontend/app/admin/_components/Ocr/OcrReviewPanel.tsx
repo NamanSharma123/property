@@ -25,9 +25,9 @@ export default function OcrReviewPanel({ isFullAdmin }: { isFullAdmin: boolean }
         </TabsList>
 
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
-          <TabsContent value="pending" className="mt-0"><ReviewQueueTab status="pending" /></TabsContent>
-          <TabsContent value="processed" className="mt-0"><ReviewQueueTab status="completed" /></TabsContent>
-          <TabsContent value="failed" className="mt-0"><ReviewQueueTab status="failed" /></TabsContent>
+          <TabsContent value="pending" className="mt-0"><ReviewQueueTab status="pending" isFullAdmin={isFullAdmin} /></TabsContent>
+          <TabsContent value="processed" className="mt-0"><ReviewQueueTab status="completed" isFullAdmin={isFullAdmin} /></TabsContent>
+          <TabsContent value="failed" className="mt-0"><ReviewQueueTab status="failed" isFullAdmin={isFullAdmin} /></TabsContent>
           <TabsContent value="templates" className="mt-0"><TemplatesTab isFullAdmin={isFullAdmin} /></TabsContent>
           <TabsContent value="email-inbox" className="mt-0"><EmailInboxTab isFullAdmin={isFullAdmin} /></TabsContent>
         </div>
