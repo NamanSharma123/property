@@ -1,7 +1,16 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-// Token storage (in-memory for access token, localStorage for refresh token)
+// Token storage — SEPARATE per portal so a user tab and an admin tab can
+// stay logged in as different accounts in the same browser.
+// User portal (in-memory access + localStorage refresh) keeps the legacy
+// 'refreshToken' key for backward compat; admin portal uses its own slots.
+export type Portal = 'user' | 'admin';
+
 let accessToken: string | null = null;
+let adminAccessToken: string | null = null;
+
+const USER_REFRESH_KEY = 'refreshToken';
+const ADMIN_REFRESH_KEY = 'adminRefreshToken';
 
 // Event for auth state changes
 type AuthStateListener = (isAuthenticated: boolean) => void;
@@ -64,31 +73,45 @@ export interface PaginatedResponse<T> {
     };
 }
 
-// Token management
-export const getAccessToken = () => accessToken;
+// Token management — portal-aware. Defaults to 'user' so all existing
+// user-portal callers keep working unchanged.
+export const getAccessToken = (portal: Portal = 'user') =>
+    portal === 'admin' ? adminAccessToken : accessToken;
 
-export const setAccessToken = (token: string | null) => {
-    accessToken = token;
-};
-
-export const getRefreshToken = (): string | null => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('refreshToken');
-};
-
-export const setRefreshToken = (token: string | null) => {
-    if (typeof window === 'undefined') return;
-    if (token) {
-        localStorage.setItem('refreshToken', token);
+export const setAccessToken = (token: string | null, portal: Portal = 'user') => {
+    if (portal === 'admin') {
+        adminAccessToken = token;
     } else {
-        localStorage.removeItem('refreshToken');
+        accessToken = token;
     }
 };
 
-export const clearTokens = () => {
-    accessToken = null;
+const refreshKeyFor = (portal: Portal) =>
+    portal === 'admin' ? ADMIN_REFRESH_KEY : USER_REFRESH_KEY;
+
+export const getRefreshToken = (portal: Portal = 'user'): string | null => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(refreshKeyFor(portal));
+};
+
+export const setRefreshToken = (token: string | null, portal: Portal = 'user') => {
+    if (typeof window === 'undefined') return;
+    const key = refreshKeyFor(portal);
+    if (token) {
+        localStorage.setItem(key, token);
+    } else {
+        localStorage.removeItem(key);
+    }
+};
+
+export const clearTokens = (portal: Portal = 'user') => {
+    if (portal === 'admin') {
+        adminAccessToken = null;
+    } else {
+        accessToken = null;
+    }
     if (typeof window !== 'undefined') {
-        localStorage.removeItem('refreshToken');
+        localStorage.removeItem(refreshKeyFor(portal));
     }
     notifyAuthStateChange(false);
 };
@@ -100,7 +123,8 @@ export async function apiFetch<T>(
     endpoint: string,
     options: RequestInit = {},
     retry = true,
-    timeoutMs = 30000
+    timeoutMs = 30000,
+    portal: Portal = 'user'
 ): Promise<ApiResponse<T>> {
     const url = `${API_BASE_URL}${endpoint}`;
 
@@ -109,9 +133,12 @@ export async function apiFetch<T>(
         ...options.headers as Record<string, string>,
     };
 
-    // Add Bearer token if available
-    if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
+    // Add Bearer token if available (portal-specific — user and admin tabs
+    // must never share tokens, otherwise a hard refresh in one tab picks
+    // up the other tab's session)
+    const currentToken = portal === 'admin' ? adminAccessToken : accessToken;
+    if (currentToken) {
+        headers['Authorization'] = `Bearer ${currentToken}`;
     }
 
     // Create AbortController for timeout
@@ -163,15 +190,15 @@ export async function apiFetch<T>(
 
         // Handle 401 - Token expired
         if (response.status === 401 && data.code === 'TOKEN_EXPIRED' && retry) {
-            const refreshed = await refreshAccessToken();
+            const refreshed = await refreshAccessToken(portal);
             if (refreshed) {
                 // Retry the original request
-                return apiFetch(endpoint, options, false, timeoutMs);
+                return apiFetch(endpoint, options, false, timeoutMs, portal);
             } else {
                 // Refresh failed, clear tokens and redirect to login
-                clearTokens();
+                clearTokens(portal);
                 if (typeof window !== 'undefined') {
-                    window.location.href = '/auth/login';
+                    window.location.href = portal === 'admin' ? '/admin/login' : '/auth/login';
                 }
             }
         }
@@ -204,9 +231,9 @@ export async function apiFetch<T>(
     }
 }
 
-// Refresh access token
-async function refreshAccessToken(): Promise<boolean> {
-    const refreshToken = getRefreshToken();
+// Refresh access token (portal-specific)
+async function refreshAccessToken(portal: Portal = 'user'): Promise<boolean> {
+    const refreshToken = getRefreshToken(portal);
     if (!refreshToken) return false;
 
     try {
@@ -221,7 +248,11 @@ async function refreshAccessToken(): Promise<boolean> {
         const data = await response.json();
 
         if (data.success && data.data?.accessToken) {
-            accessToken = data.data.accessToken;
+            if (portal === 'admin') {
+                adminAccessToken = data.data.accessToken;
+            } else {
+                accessToken = data.data.accessToken;
+            }
             notifyAuthStateChange(true);
             return true;
         }
@@ -232,17 +263,29 @@ async function refreshAccessToken(): Promise<boolean> {
     return false;
 }
 
-// Auth API
+// Admin-portal fetch — same handling as apiFetch, but reads/writes the
+// admin token slots so /admin tabs never touch the user tab's session.
+export function adminFetch<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    retry = true,
+    timeoutMs = 30000
+): Promise<ApiResponse<T>> {
+    return apiFetch<T>(endpoint, options, retry, timeoutMs, 'admin');
+}
+
+// Auth API — portal-aware. User portal is the default; pass 'admin' for
+// the admin panel so the two tabs keep independent sessions.
 export const authApi = {
-    async login(email: string, password: string): Promise<AuthResponse> {
+    async login(email: string, password: string, portal: Portal = 'user'): Promise<AuthResponse> {
         const response = await apiFetch<AuthResponse['data']>('/api/auth/login', {
             method: 'POST',
             body: JSON.stringify({ email, password }),
-        });
+        }, true, 30000, portal);
 
         if (response.success && response.data) {
-            accessToken = response.data.accessToken;
-            setRefreshToken(response.data.refreshToken);
+            setAccessToken(response.data.accessToken, portal);
+            setRefreshToken(response.data.refreshToken, portal);
             notifyAuthStateChange(true);
         }
 
@@ -264,19 +307,19 @@ export const authApi = {
         return response as AuthResponse;
     },
 
-    async logout(): Promise<ApiResponse> {
-        const refreshToken = getRefreshToken();
+    async logout(portal: Portal = 'user'): Promise<ApiResponse> {
+        const refreshToken = getRefreshToken(portal);
         const response = await apiFetch('/api/auth/logout', {
             method: 'POST',
             body: JSON.stringify({ refreshToken }),
-        });
+        }, true, 30000, portal);
 
-        clearTokens();
+        clearTokens(portal);
         return response;
     },
 
-    async getMe(): Promise<ApiResponse<{ user: User }>> {
-        return apiFetch('/api/auth/me');
+    async getMe(portal: Portal = 'user'): Promise<ApiResponse<{ user: User }>> {
+        return apiFetch('/api/auth/me', {}, true, 30000, portal);
     },
 
     async updateProfile(data: Partial<User>): Promise<ApiResponse<{ user: User }>> {
@@ -294,11 +337,11 @@ export const authApi = {
         });
     },
 
-    async initializeFromRefreshToken(): Promise<boolean> {
-        const refreshToken = getRefreshToken();
+    async initializeFromRefreshToken(portal: Portal = 'user'): Promise<boolean> {
+        const refreshToken = getRefreshToken(portal);
         if (!refreshToken) return false;
 
-        const success = await refreshAccessToken();
+        const success = await refreshAccessToken(portal);
         return success;
     },
 

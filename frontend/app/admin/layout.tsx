@@ -24,7 +24,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     const checkSession = async () => {
       try {
-        const sessionData = await getSession();
+        // Admin panel reads ONLY admin tokens — a user tab open in the
+        // same browser (different localStorage key) can never leak in here.
+        const sessionData = await getSession('admin');
         if (!sessionData || (sessionData.role !== 'admin' && sessionData.role !== 'manager')) {
           router.push('/admin/login');
           return;

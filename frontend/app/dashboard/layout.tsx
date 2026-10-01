@@ -18,7 +18,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        const sessionData = await getSession();
+        // User panel reads ONLY user tokens — an admin tab open in the
+        // same browser (different localStorage key) can never leak in here.
+        const sessionData = await getSession('user');
         if (!sessionData) {
           router.push('/auth/login');
         } else if (sessionData.role === 'admin' || sessionData.role === 'manager') {

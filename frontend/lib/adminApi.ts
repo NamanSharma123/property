@@ -1,9 +1,9 @@
 /**
  * Admin panel API client — same request/response conventions as lib/api.ts
- * (reuses its apiFetch(), which already handles the Bearer token + 401
+ * (reuses its adminFetch(), which already handles the Bearer token + 401
  * refresh-and-retry), just pointed at the /api/admin/* namespace.
  */
-import { apiFetch, ApiResponse } from './api';
+import { adminFetch, ApiResponse } from './api';
 
 export interface AdminUser {
     id: string;
@@ -396,59 +396,59 @@ function toQuery(params?: Record<string, string | number | undefined>) {
 
 export const adminApi = {
     async getDashboard(): Promise<ApiResponse<DashboardData>> {
-        return apiFetch('/api/admin/dashboard');
+        return adminFetch('/api/admin/dashboard');
     },
 
     users: {
         async getAll(params?: { search?: string; status?: string; role?: string; page?: number; limit?: number }) {
-            return apiFetch<{ users: AdminUser[]; pagination: Pagination }>(`/api/admin/users${toQuery(params)}`);
+            return adminFetch<{ users: AdminUser[]; pagination: Pagination }>(`/api/admin/users${toQuery(params)}`);
         },
         async getOne(id: string) {
-            return apiFetch<{ user: AdminUser }>(`/api/admin/users/${id}`);
+            return adminFetch<{ user: AdminUser }>(`/api/admin/users/${id}`);
         },
         async update(id: string, data: Partial<Pick<AdminUser, 'name' | 'phone' | 'avatar' | 'role'>>) {
-            return apiFetch<{ user: AdminUser }>(`/api/admin/users/${id}`, {
+            return adminFetch<{ user: AdminUser }>(`/api/admin/users/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data),
             });
         },
         async suspend(id: string) {
-            return apiFetch<{ user: AdminUser }>(`/api/admin/users/${id}/suspend`, { method: 'POST' });
+            return adminFetch<{ user: AdminUser }>(`/api/admin/users/${id}/suspend`, { method: 'POST' });
         },
         async activate(id: string) {
-            return apiFetch<{ user: AdminUser }>(`/api/admin/users/${id}/activate`, { method: 'POST' });
+            return adminFetch<{ user: AdminUser }>(`/api/admin/users/${id}/activate`, { method: 'POST' });
         },
         async remove(id: string) {
-            return apiFetch(`/api/admin/users/${id}`, {
+            return adminFetch(`/api/admin/users/${id}`, {
                 method: 'DELETE',
                 body: JSON.stringify({ confirm: true }),
             });
         },
         async resetPassword(id: string) {
-            return apiFetch(`/api/admin/users/${id}/reset-password`, { method: 'POST' });
+            return adminFetch(`/api/admin/users/${id}/reset-password`, { method: 'POST' });
         },
         async getProperties(id: string, params?: { page?: number; limit?: number }) {
-            return apiFetch<{ properties: Record<string, unknown>[]; pagination: Pagination }>(
+            return adminFetch<{ properties: Record<string, unknown>[]; pagination: Pagination }>(
                 `/api/admin/users/${id}/properties${toQuery(params)}`
             );
         },
         async getTransactions(id: string, params?: { propertyId?: string; type?: string; categoryId?: string; startDate?: string; endDate?: string; page?: number; limit?: number }) {
-            return apiFetch<{ transactions: Record<string, unknown>[]; pagination: Pagination }>(
+            return adminFetch<{ transactions: Record<string, unknown>[]; pagination: Pagination }>(
                 `/api/admin/users/${id}/transactions${toQuery(params)}`
             );
         },
         async getDocuments(id: string, params?: { page?: number; limit?: number }) {
-            return apiFetch<{ documents: Record<string, unknown>[]; pagination: Pagination }>(
+            return adminFetch<{ documents: Record<string, unknown>[]; pagination: Pagination }>(
                 `/api/admin/users/${id}/documents${toQuery(params)}`
             );
         },
         async getActivity(id: string, params?: { page?: number; limit?: number }) {
-            return apiFetch<{ activity: ActivityLogEntry[]; pagination: Pagination }>(
+            return adminFetch<{ activity: ActivityLogEntry[]; pagination: Pagination }>(
                 `/api/admin/users/${id}/activity${toQuery(params)}`
             );
         },
         async getLoans(id: string, params?: { page?: number; limit?: number }) {
-            return apiFetch<{ loans: AdminLoan[]; pagination: Pagination }>(
+            return adminFetch<{ loans: AdminLoan[]; pagination: Pagination }>(
                 `/api/admin/users/${id}/loans${toQuery(params)}`
             );
         },
@@ -456,28 +456,28 @@ export const adminApi = {
 
     properties: {
         async getAll(params?: { search?: string; status?: string; type?: string; userId?: string; page?: number; limit?: number }) {
-            return apiFetch<{ properties: AdminProperty[]; pagination: Pagination }>(`/api/admin/properties${toQuery(params)}`);
+            return adminFetch<{ properties: AdminProperty[]; pagination: Pagination }>(`/api/admin/properties${toQuery(params)}`);
         },
         async getOne(id: string) {
-            return apiFetch<{ property: AdminProperty }>(`/api/admin/properties/${id}`);
+            return adminFetch<{ property: AdminProperty }>(`/api/admin/properties/${id}`);
         },
         async update(id: string, data: Record<string, unknown>) {
-            return apiFetch<{ property: AdminProperty }>(`/api/admin/properties/${id}`, {
+            return adminFetch<{ property: AdminProperty }>(`/api/admin/properties/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data),
             });
         },
         async remove(id: string) {
-            return apiFetch(`/api/admin/properties/${id}`, { method: 'DELETE' });
+            return adminFetch(`/api/admin/properties/${id}`, { method: 'DELETE' });
         },
         async transferOwnership(id: string, newOwnerId: string) {
-            return apiFetch<{ property: AdminProperty }>(`/api/admin/properties/${id}/transfer-ownership`, {
+            return adminFetch<{ property: AdminProperty }>(`/api/admin/properties/${id}/transfer-ownership`, {
                 method: 'POST',
                 body: JSON.stringify({ newOwnerId }),
             });
         },
         async merge(id: string, duplicatePropertyId: string) {
-            return apiFetch<{ property: AdminProperty }>(`/api/admin/properties/${id}/merge`, {
+            return adminFetch<{ property: AdminProperty }>(`/api/admin/properties/${id}/merge`, {
                 method: 'POST',
                 body: JSON.stringify({ duplicatePropertyId }),
             });
@@ -486,25 +486,25 @@ export const adminApi = {
 
     transactions: {
         async getAll(params?: { userId?: string; propertyId?: string; categoryId?: string; type?: string; status?: string; source?: string; startDate?: string; endDate?: string; search?: string; page?: number; limit?: number }) {
-            return apiFetch<{ transactions: AdminTransaction[]; pagination: Pagination }>(`/api/admin/transactions${toQuery(params)}`);
+            return adminFetch<{ transactions: AdminTransaction[]; pagination: Pagination }>(`/api/admin/transactions${toQuery(params)}`);
         },
         async update(id: string, data: Record<string, unknown>) {
-            return apiFetch<{ transaction: AdminTransaction }>(`/api/admin/transactions/${id}`, {
+            return adminFetch<{ transaction: AdminTransaction }>(`/api/admin/transactions/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data),
             });
         },
         async remove(id: string) {
-            return apiFetch(`/api/admin/transactions/${id}`, { method: 'DELETE' });
+            return adminFetch(`/api/admin/transactions/${id}`, { method: 'DELETE' });
         },
         async bulkCategory(ids: string[], data: { categoryId?: string; categoryName?: string }) {
-            return apiFetch(`/api/admin/transactions/bulk-category`, {
+            return adminFetch(`/api/admin/transactions/bulk-category`, {
                 method: 'POST',
                 body: JSON.stringify({ ids, ...data }),
             });
         },
         async bulkReassignProperty(ids: string[], propertyId: string) {
-            return apiFetch(`/api/admin/transactions/bulk-property`, {
+            return adminFetch(`/api/admin/transactions/bulk-property`, {
                 method: 'POST',
                 body: JSON.stringify({ ids, propertyId }),
             });
@@ -513,94 +513,94 @@ export const adminApi = {
 
     documents: {
         async getAll(params?: { userId?: string; propertyId?: string; status?: string; documentType?: string; search?: string; page?: number; limit?: number }) {
-            return apiFetch<{ documents: AdminDocument[]; pagination: Pagination }>(`/api/admin/documents${toQuery(params)}`);
+            return adminFetch<{ documents: AdminDocument[]; pagination: Pagination }>(`/api/admin/documents${toQuery(params)}`);
         },
         async remove(id: string) {
-            return apiFetch(`/api/admin/documents/${id}`, { method: 'DELETE' });
+            return adminFetch(`/api/admin/documents/${id}`, { method: 'DELETE' });
         },
         async getViewUrl(id: string) {
-            return apiFetch<{ url: string }>(`/api/admin/documents/${id}/view-url`);
+            return adminFetch<{ url: string }>(`/api/admin/documents/${id}/view-url`);
         },
         async reprocess(id: string) {
-            return apiFetch<{ document: Record<string, unknown> }>(`/api/admin/documents/${id}/reprocess`, { method: 'POST' });
+            return adminFetch<{ document: Record<string, unknown> }>(`/api/admin/documents/${id}/reprocess`, { method: 'POST' });
         },
     },
 
     loans: {
         async getAll(params?: { userId?: string; propertyId?: string; status?: string; search?: string; page?: number; limit?: number }) {
-            return apiFetch<{ loans: AdminLoan[]; pagination: Pagination }>(`/api/admin/loans${toQuery(params)}`);
+            return adminFetch<{ loans: AdminLoan[]; pagination: Pagination }>(`/api/admin/loans${toQuery(params)}`);
         },
         async create(data: Record<string, unknown>) {
-            return apiFetch<{ loan: AdminLoan }>(`/api/admin/loans`, {
+            return adminFetch<{ loan: AdminLoan }>(`/api/admin/loans`, {
                 method: 'POST',
                 body: JSON.stringify(data),
             });
         },
         async update(id: string, data: Record<string, unknown>) {
-            return apiFetch<{ loan: AdminLoan }>(`/api/admin/loans/${id}`, {
+            return adminFetch<{ loan: AdminLoan }>(`/api/admin/loans/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data),
             });
         },
         async remove(id: string) {
-            return apiFetch(`/api/admin/loans/${id}`, { method: 'DELETE' });
+            return adminFetch(`/api/admin/loans/${id}`, { method: 'DELETE' });
         },
     },
 
     ocr: {
         async getDocument(id: string) {
-            return apiFetch<{ document: OcrDocumentDetail }>(`/api/admin/ocr/documents/${id}`);
+            return adminFetch<{ document: OcrDocumentDetail }>(`/api/admin/ocr/documents/${id}`);
         },
         async approve(id: string, data?: { createTransaction?: boolean; propertyId?: string; categoryName?: string; amount?: number | string; date?: string; description?: string; type?: 'income' | 'expense' }) {
-            return apiFetch(`/api/admin/ocr/documents/${id}/approve`, { method: 'POST', body: JSON.stringify(data || {}) });
+            return adminFetch(`/api/admin/ocr/documents/${id}/approve`, { method: 'POST', body: JSON.stringify(data || {}) });
         },
         // Creates one transaction per not-yet-converted extracted line item
         // (each with its own real amount/category/type) instead of the
         // single manually-typed transaction `approve` above creates.
         async approveLineItems(id: string, propertyId?: string) {
-            return apiFetch<{ document: Record<string, unknown>; transactions: Record<string, unknown>[]; created: number; skipped: number }>(
+            return adminFetch<{ document: Record<string, unknown>; transactions: Record<string, unknown>[]; created: number; skipped: number }>(
                 `/api/admin/ocr/documents/${id}/approve-line-items`, { method: 'POST', body: JSON.stringify(propertyId ? { propertyId } : {}) }
             );
         },
         async reject(id: string, reason?: string) {
-            return apiFetch(`/api/admin/ocr/documents/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+            return adminFetch(`/api/admin/ocr/documents/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
         },
         async reprocess(id: string, reason?: string) {
-            return apiFetch<{ document: Record<string, unknown>; ocrJob: OcrJob }>(
+            return adminFetch<{ document: Record<string, unknown>; ocrJob: OcrJob }>(
                 `/api/admin/ocr/documents/${id}/reprocess`, { method: 'POST', body: JSON.stringify({ reason }) }
             );
         },
         async bulkApprove(ids: string[]) {
-            return apiFetch(`/api/admin/ocr/bulk-approve`, { method: 'POST', body: JSON.stringify({ ids }) });
+            return adminFetch(`/api/admin/ocr/bulk-approve`, { method: 'POST', body: JSON.stringify({ ids }) });
         },
         async bulkReject(ids: string[]) {
-            return apiFetch(`/api/admin/ocr/bulk-reject`, { method: 'POST', body: JSON.stringify({ ids }) });
+            return adminFetch(`/api/admin/ocr/bulk-reject`, { method: 'POST', body: JSON.stringify({ ids }) });
         },
         async correctField(extractedId: string, value: string) {
-            return apiFetch(`/api/admin/ocr/extracted-data/${extractedId}`, { method: 'PUT', body: JSON.stringify({ value }) });
+            return adminFetch(`/api/admin/ocr/extracted-data/${extractedId}`, { method: 'PUT', body: JSON.stringify({ value }) });
         },
         templates: {
             async getAll() {
-                return apiFetch<{ templates: OcrTemplate[] }>(`/api/admin/ocr/templates`);
+                return adminFetch<{ templates: OcrTemplate[] }>(`/api/admin/ocr/templates`);
             },
             async update(id: string, data: { status?: 'enabled' | 'disabled'; confidenceThreshold?: number; version?: string; description?: string }) {
-                return apiFetch<{ template: OcrTemplate }>(`/api/admin/ocr/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+                return adminFetch<{ template: OcrTemplate }>(`/api/admin/ocr/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
             },
         },
     },
 
     emailInbox: {
         async getAll(params?: { status?: string; userId?: string; search?: string; page?: number; limit?: number }) {
-            return apiFetch<{ emailMessages: EmailMessage[]; pagination: Pagination }>(`/api/admin/email-inbox${toQuery(params)}`);
+            return adminFetch<{ emailMessages: EmailMessage[]; pagination: Pagination }>(`/api/admin/email-inbox${toQuery(params)}`);
         },
         async map(id: string, data: { userId?: string; propertyId?: string }) {
-            return apiFetch<{ emailMessage: EmailMessage }>(`/api/admin/email-inbox/${id}/map`, { method: 'POST', body: JSON.stringify(data) });
+            return adminFetch<{ emailMessage: EmailMessage }>(`/api/admin/email-inbox/${id}/map`, { method: 'POST', body: JSON.stringify(data) });
         },
         async convert(id: string) {
-            return apiFetch<{ emailMessage: EmailMessage; documentId: string }>(`/api/admin/email-inbox/${id}/convert`, { method: 'POST' });
+            return adminFetch<{ emailMessage: EmailMessage; documentId: string }>(`/api/admin/email-inbox/${id}/convert`, { method: 'POST' });
         },
         async runJob(ids?: string[]) {
-            return apiFetch<{ processed: number; needs_review: number; failed: number; total: number }>(
+            return adminFetch<{ processed: number; needs_review: number; failed: number; total: number }>(
                 '/api/admin/email-inbox/run-job',
                 { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) }
             );
@@ -609,87 +609,87 @@ export const adminApi = {
 
     support: {
         async getAll(params?: { status?: string; priority?: string; category?: string; assignedAdminId?: string; userId?: string; search?: string; page?: number; limit?: number }) {
-            return apiFetch<{ tickets: Ticket[]; pagination: Pagination }>(`/api/admin/support/tickets${toQuery(params)}`);
+            return adminFetch<{ tickets: Ticket[]; pagination: Pagination }>(`/api/admin/support/tickets${toQuery(params)}`);
         },
         async getOne(id: string) {
-            return apiFetch<{ ticket: Ticket }>(`/api/admin/support/tickets/${id}`);
+            return adminFetch<{ ticket: Ticket }>(`/api/admin/support/tickets/${id}`);
         },
         async reply(id: string, message: string) {
-            return apiFetch<{ message: TicketMessage }>(`/api/admin/support/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify({ message }) });
+            return adminFetch<{ message: TicketMessage }>(`/api/admin/support/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify({ message }) });
         },
         async addInternalNote(id: string, note: string) {
-            return apiFetch<{ message: TicketMessage }>(`/api/admin/support/tickets/${id}/internal-note`, { method: 'POST', body: JSON.stringify({ note }) });
+            return adminFetch<{ message: TicketMessage }>(`/api/admin/support/tickets/${id}/internal-note`, { method: 'POST', body: JSON.stringify({ note }) });
         },
         async assign(id: string, adminId: string | null) {
-            return apiFetch<{ ticket: Ticket }>(`/api/admin/support/tickets/${id}/assign`, { method: 'POST', body: JSON.stringify({ adminId }) });
+            return adminFetch<{ ticket: Ticket }>(`/api/admin/support/tickets/${id}/assign`, { method: 'POST', body: JSON.stringify({ adminId }) });
         },
         async setStatus(id: string, status: Ticket['status']) {
-            return apiFetch<{ ticket: Ticket }>(`/api/admin/support/tickets/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
+            return adminFetch<{ ticket: Ticket }>(`/api/admin/support/tickets/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
         },
     },
 
     subscriptions: {
         plans: {
             async getAll() {
-                return apiFetch<{ plans: SubscriptionPlan[] }>(`/api/admin/subscriptions/plans`);
+                return adminFetch<{ plans: SubscriptionPlan[] }>(`/api/admin/subscriptions/plans`);
             },
             async update(id: string, data: Partial<{ monthlyPrice: number; usersAllowed: number; ocrLimit: number | null; isActive: boolean; description: string }>) {
-                return apiFetch<{ plan: SubscriptionPlan }>(`/api/admin/subscriptions/plans/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+                return adminFetch<{ plan: SubscriptionPlan }>(`/api/admin/subscriptions/plans/${id}`, { method: 'PUT', body: JSON.stringify(data) });
             },
         },
         async getAll(params?: { planId?: string; status?: string; paymentStatus?: string; search?: string; page?: number; limit?: number }) {
-            return apiFetch<{ subscriptions: AdminSubscription[]; pagination: Pagination }>(`/api/admin/subscriptions${toQuery(params)}`);
+            return adminFetch<{ subscriptions: AdminSubscription[]; pagination: Pagination }>(`/api/admin/subscriptions${toQuery(params)}`);
         },
         async getOne(id: string) {
-            return apiFetch<{ subscription: AdminSubscription }>(`/api/admin/subscriptions/${id}`);
+            return adminFetch<{ subscription: AdminSubscription }>(`/api/admin/subscriptions/${id}`);
         },
         async changePlan(id: string, planId: string) {
-            return apiFetch<{ subscription: AdminSubscription }>(`/api/admin/subscriptions/${id}/change-plan`, { method: 'POST', body: JSON.stringify({ planId }) });
+            return adminFetch<{ subscription: AdminSubscription }>(`/api/admin/subscriptions/${id}/change-plan`, { method: 'POST', body: JSON.stringify({ planId }) });
         },
         async cancel(id: string) {
-            return apiFetch<{ subscription: AdminSubscription }>(`/api/admin/subscriptions/${id}/cancel`, { method: 'POST' });
+            return adminFetch<{ subscription: AdminSubscription }>(`/api/admin/subscriptions/${id}/cancel`, { method: 'POST' });
         },
         async recordPayment(id: string, data: { amount: number | string; method?: string; notes?: string }) {
-            return apiFetch<{ payment: SubscriptionPayment }>(`/api/admin/subscriptions/${id}/record-payment`, { method: 'POST', body: JSON.stringify(data) });
+            return adminFetch<{ payment: SubscriptionPayment }>(`/api/admin/subscriptions/${id}/record-payment`, { method: 'POST', body: JSON.stringify(data) });
         },
     },
 
     categories: {
         async getAll(params?: { type?: string; isSystem?: string; ownerId?: string; search?: string }) {
-            return apiFetch<{ categories: AdminCategory[] }>(`/api/admin/categories${toQuery(params)}`);
+            return adminFetch<{ categories: AdminCategory[] }>(`/api/admin/categories${toQuery(params)}`);
         },
         async create(data: { name: string; type: string; description?: string; icon?: string; color?: string; taxCode?: string; isTaxDeductible?: boolean }) {
-            return apiFetch<{ category: AdminCategory }>(`/api/admin/categories`, { method: 'POST', body: JSON.stringify(data) });
+            return adminFetch<{ category: AdminCategory }>(`/api/admin/categories`, { method: 'POST', body: JSON.stringify(data) });
         },
         async update(id: string, data: Record<string, unknown>) {
-            return apiFetch<{ category: AdminCategory }>(`/api/admin/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+            return adminFetch<{ category: AdminCategory }>(`/api/admin/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) });
         },
         async remove(id: string) {
-            return apiFetch(`/api/admin/categories/${id}`, { method: 'DELETE' });
+            return adminFetch(`/api/admin/categories/${id}`, { method: 'DELETE' });
         },
         async merge(id: string, intoCategoryId: string) {
-            return apiFetch(`/api/admin/categories/${id}/merge`, { method: 'POST', body: JSON.stringify({ intoCategoryId }) });
+            return adminFetch(`/api/admin/categories/${id}/merge`, { method: 'POST', body: JSON.stringify({ intoCategoryId }) });
         },
     },
 
     reports: {
         async get<T = Record<string, unknown>>(type: ReportType, params?: { userId?: string; propertyId?: string; startDate?: string; endDate?: string }) {
-            return apiFetch<{ type: ReportType; report: T }>(`/api/admin/reports${toQuery({ type, ...params })}`);
+            return adminFetch<{ type: ReportType; report: T }>(`/api/admin/reports${toQuery({ type, ...params })}`);
         },
     },
 
     settings: {
         async get() {
-            return apiFetch<{ settings: PlatformSettings; integrations: IntegrationStatus[] }>(`/api/admin/settings`);
+            return adminFetch<{ settings: PlatformSettings; integrations: IntegrationStatus[] }>(`/api/admin/settings`);
         },
         async update(data: Partial<PlatformSettings>) {
-            return apiFetch<{ settings: PlatformSettings }>(`/api/admin/settings`, { method: 'PUT', body: JSON.stringify(data) });
+            return adminFetch<{ settings: PlatformSettings }>(`/api/admin/settings`, { method: 'PUT', body: JSON.stringify(data) });
         },
     },
 
     auditLogs: {
         async getAll(params?: { adminId?: string; action?: string; entityType?: string; startDate?: string; endDate?: string; page?: number; limit?: number }) {
-            return apiFetch<{ auditLogs: AuditLogEntry[]; pagination: Pagination }>(`/api/admin/audit-logs${toQuery(params)}`);
+            return adminFetch<{ auditLogs: AuditLogEntry[]; pagination: Pagination }>(`/api/admin/audit-logs${toQuery(params)}`);
         },
     },
 };
