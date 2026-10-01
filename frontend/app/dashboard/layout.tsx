@@ -11,7 +11,7 @@ import { SWRProvider } from '@/components/providers/swr-provider';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
-  const [session, setSession] = useState<{ email: string; name?: string; uniqueId?: string; inboundEmail?: string } | null>(null);
+  const [session, setSession] = useState<{ email: string; name?: string; uniqueId?: string; inboundEmail?: string; role?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -21,6 +21,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const sessionData = await getSession();
         if (!sessionData) {
           router.push('/auth/login');
+        } else if (sessionData.role === 'admin' || sessionData.role === 'manager') {
+          // User portal is for regular users only — admins belong in /admin.
+          // Without this, an admin hitting hard-refresh on /dashboard stays
+          // logged into the wrong panel (and vice versa confusion).
+          router.replace('/admin/dashboard');
         } else {
           setSession(sessionData);
         }

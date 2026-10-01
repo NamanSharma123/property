@@ -3,8 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShieldCheck, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react'
-import { authApi } from '@/lib/api'
-import { logout } from '@/lib/auth'
+import { authApi, clearTokens } from '@/lib/api'
 
 export default function AdminLoginPage() {
     const router = useRouter()
@@ -33,7 +32,9 @@ export default function AdminLoginPage() {
             const role = result.data.user.role
             if (role !== 'admin' && role !== 'manager') {
                 setError("This account doesn't have admin panel access.")
-                await logout()
+                // Don't call logout() here — it hard-redirects to /auth/login
+                // and wipes this error. Just drop the tokens just issued.
+                clearTokens()
                 setLoading(false)
                 return
             }

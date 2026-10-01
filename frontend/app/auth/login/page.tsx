@@ -24,8 +24,15 @@ export default function LoginPage() {
             const result = await login(email, password)
 
             if (result.success && result.user) {
-                // Redirect users to dashboard
-                router.push('/dashboard')
+                // Role-based redirect: admins belong in /admin, regular
+                // users in /dashboard. Without this a staff signup + hard
+                // refresh (or an admin using the user portal) ends up in
+                // the wrong panel.
+                if (result.user.role === 'admin' || result.user.role === 'manager') {
+                    router.push('/admin/dashboard')
+                } else {
+                    router.push('/dashboard')
+                }
             } else {
                 setError(result.error || 'Failed to sign in')
                 setLoading(false)

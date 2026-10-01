@@ -84,7 +84,11 @@ const formatUser = (user) => {
  */
 exports.signup = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
+    // Public signup must ALWAYS create a regular portal user.
+    // Never trust a client-supplied `role` — otherwise anyone can
+    // self-register as admin/manager and walk into /admin.
+    const role = 'staff';
 
     // Check if user already exists
     const existingUser = await db.query(
