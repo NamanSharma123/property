@@ -283,9 +283,17 @@ export interface EmailMessage {
     property_id: string | null;
     property_name: string | null;
     document_id: string | null;
+    // Null when there's no document yet; otherwise the linked Document's
+    // own status — 'failed' here means an admin rejected it (see
+    // AdminOcrRejectView). Used alongside `status` to decide whether
+    // "Delete from server" (Req 6) can be offered.
+    document_status: string | null;
     ocr_confidence: number | null;
     status: 'received' | 'processing' | 'processed' | 'needs_review' | 'failed';
     processing_log: string | null;
+    source_s3_bucket: string | null;
+    source_s3_key: string | null;
+    source_deleted_at: string | null;
 }
 
 export interface TicketMessage {
@@ -600,10 +608,16 @@ export const adminApi = {
             return apiFetch<{ emailMessage: EmailMessage; documentId: string }>(`/api/admin/email-inbox/${id}/convert`, { method: 'POST' });
         },
         async runJob(ids?: string[]) {
-            return apiFetch<{ processed: number; needs_review: number; failed: number; total: number }>(
+            return apiFetch<{ processed: number; needs_review: number; failed: number; skipped: number; total: number }>(
                 '/api/admin/email-inbox/run-job',
                 { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) }
             );
+        },
+        // Req 6 — removes the original email from the S3 bucket it arrived
+        // in; only allowed once the email/document is rejected or failed
+        // (enforced server-side, not just by hiding the button).
+        async deleteFromServer(id: string) {
+            return apiFetch<{ emailMessage: EmailMessage }>(`/api/admin/email-inbox/${id}/delete-from-server`, { method: 'POST' });
         },
     },
 

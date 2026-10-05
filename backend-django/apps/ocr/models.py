@@ -132,6 +132,17 @@ class Review(CreatedModel):
 
 
 class DocumentDuplicate(CreatedModel):
+    """
+    One row per (owner, file_hash) ever seen — the dedup registry both the
+    direct-upload flow (UploadDocumentView, detection_type='exact-hash' on
+    url+filename) and the email pipeline (apps.email_inbox.processing,
+    detection_type='content-sha256' on the actual attachment bytes) check
+    before creating a new Document. The unique constraint below is what
+    makes this race-safe (Req 11/2): two workers racing to insert the same
+    (owner, file_hash) can't both succeed — the loser's insert raises
+    IntegrityError, which the caller catches and treats as "this is a
+    duplicate", the same conclusion a normal lookup would have reached.
+    """
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_column='owner_id')
     file_hash = models.CharField(max_length=64)
     document_signature = models.JSONField(default=dict)
@@ -144,6 +155,9 @@ class DocumentDuplicate(CreatedModel):
         db_table = 'document_duplicates'
         indexes = [
             models.Index(fields=['owner', 'file_hash'], name='idx_doc_dup_owner_hash'),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=['owner', 'file_hash'], name='uniq_doc_dup_owner_hash'),
         ]
 
 

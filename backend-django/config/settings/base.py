@@ -101,9 +101,16 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# CORS — the Node backend effectively reflects any origin and allows credentials
+# CORS — allow only configured browser origins in production.
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGIN_REGEXES = [r'.*']
+CORS_ALLOWED_ORIGINS = config(
+    'CORS_ALLOWED_ORIGINS',
+    default=(
+        'https://investview.com.au,https://www.investview.com.au,'
+        'https://5yy6ei9nup.ap-southeast-2.awsapprunner.com'
+    ),
+    cast=lambda v: [origin.strip() for origin in v.split(',') if origin.strip()],
+)
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
 CORS_ALLOW_HEADERS = ['content-type', 'authorization']
 

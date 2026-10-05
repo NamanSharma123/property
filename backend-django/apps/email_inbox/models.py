@@ -48,6 +48,19 @@ class EmailMessage(TimeStampedModel):
     # test/manual inserts that don't have a real Message-ID.
     message_id = models.CharField(max_length=500, unique=True, null=True, blank=True)
 
+    # Where SES actually stored the raw MIME email (Req 6 — "delete from
+    # server"/inbox needs to know the exact source object to remove). Null
+    # for rows that didn't arrive via the SES/SNS adapter (the test
+    # webhook, or rows predating this field).
+    source_s3_bucket = models.CharField(max_length=255, null=True, blank=True)
+    source_s3_key = models.TextField(null=True, blank=True)
+    # Set once an admin deletes the raw email from that bucket — the
+    # application's own EmailMessage/Document/Transaction records are
+    # untouched by this (Req 6: deleting from the server must not delete
+    # already-stored data), so this is purely "is there still a copy on
+    # the mail server" bookkeeping.
+    source_deleted_at = models.DateTimeField(null=True, blank=True)
+
     # Legacy single-attachment convenience fields — kept for backward
     # compatibility with rows/integrations written before EmailAttachment
     # existed. New ingestion writes EmailAttachment rows instead; a

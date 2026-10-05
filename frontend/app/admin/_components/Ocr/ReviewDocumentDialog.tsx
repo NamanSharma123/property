@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { FileText, Check, X, Pencil, RotateCcw, History } from "lucide-react";
+import { Check, X, Pencil, RotateCcw, History } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -142,7 +142,7 @@ export default function ReviewDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Review document</DialogTitle></DialogHeader>
 
         {loading || !doc ? (
@@ -152,16 +152,23 @@ export default function ReviewDocumentDialog({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-sm font-semibold text-gray-900">Source document</h4>
-                <Badge variant="outline">{doc.file_name}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{doc.file_name}</Badge>
+                  {previewUrl && (
+                    <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline whitespace-nowrap">
+                      Open in new tab ↗
+                    </a>
+                  )}
+                </div>
               </div>
               {previewUrl ? (
-                <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="block h-72 border border-dashed border-gray-200 rounded-xl bg-gray-50 flex items-center justify-center text-primary hover:bg-gray-100 transition-colors">
-                  <span className="flex flex-col items-center gap-2 text-sm">
-                    <FileText size={28} /> Open document
-                  </span>
-                </a>
+                // The browser's native PDF/image viewer — handles every page
+                // of a multi-page PDF (scroll/paginate inside the frame)
+                // without pulling in a separate PDF.js dependency, same
+                // pattern DepreciationScheduleModal already uses elsewhere.
+                <iframe src={previewUrl} title={doc.file_name} className="w-full h-[32rem] border border-gray-200 rounded-xl bg-gray-50" />
               ) : (
-                <div className="h-72 border border-dashed border-gray-200 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 text-sm">
+                <div className="h-[32rem] border border-dashed border-gray-200 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 text-sm">
                   No preview available
                 </div>
               )}

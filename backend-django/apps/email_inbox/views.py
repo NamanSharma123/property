@@ -132,6 +132,8 @@ def ingest_email(data):
         # actual (possibly multi-file) ingestion path.
         attachment_url=data.get('attachmentUrl') or None,
         attachment_name=data.get('attachmentName') or None,
+        source_s3_bucket=data.get('sourceS3Bucket') or None,
+        source_s3_key=data.get('sourceS3Key') or None,
         received_at=received_at,
         user=user,
         status='received' if user else 'needs_review',

@@ -25,6 +25,7 @@ apps.email_inbox.tasks (the periodic "run every hour" job) and
 apps.admin_panel.views_email.AdminEmailRunJobView (the admin's "run now"
 button).
 """
+import hashlib
 import logging
 import re
 import urllib.request
@@ -32,11 +33,13 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
+from django.db import IntegrityError
+from django.db import transaction as db_transaction
 from django.db.models import Max
 from django.utils import timezone
 
 from apps.ocr import statement_parser
-from apps.ocr.models import Document, DocumentLineItem, ExtractedData, OCRJob
+from apps.ocr.models import Document, DocumentDuplicate, DocumentLineItem, ExtractedData, OcrTemplate, OCRJob
 from apps.ocr.parser import extract_data
 from apps.ocr.views import _extract_image_text, _extract_pdf_text, _extract_pdf_text_via_ocr
 from apps.properties.models import Property
@@ -44,19 +47,27 @@ from apps.transactions.models import Transaction
 
 logger = logging.getLogger(__name__)
 
-# Subject-line routing (spec point 4) — order matters, more specific first.
-# There's no dedicated settlement/depreciation parser in this codebase (the
-# generic extractor + the layout-aware statement_parser already cover a wide
-# range of real-estate statement formats regardless of subject), so this
-# classification drives Document.document_type / admin-panel filtering
-# rather than picking a different extraction function.
+# Subject-line routing. Keyed to the document_type slugs already seeded
+# into OcrTemplate (apps/ocr/migrations/0004_seed_ocr_templates.py:
+# rental-statement, settlement-statement, interest-statement) rather than
+# inventing new ones, so OcrTemplate.status can actually gate automatic
+# processing (see _template_is_approved below / Req 9) — the two used to
+# use different naming schemes entirely and could never have lined up.
+# More specific phrases first; matched as whole words (see classify_subject)
+# so e.g. "Current Statement" doesn't false-positive on "rent" inside
+# "current", and inner whitespace/case/leading-trailing space don't matter.
 SUBJECT_TYPE_KEYWORDS = [
-    ('settlement', 'settlement'),
-    ('depreciation', 'depreciation'),
-    ('rental statement', 'rental_statement'),
-    ('owner statement', 'rental_statement'),
-    ('rental', 'rental_statement'),
-    ('rent', 'rental_statement'),
+    ('settlement statement', 'settlement-statement'),
+    ('settlement', 'settlement-statement'),
+    ('depreciation statement', 'depreciation-schedule'),
+    ('depreciation', 'depreciation-schedule'),
+    ('bank interest', 'interest-statement'),
+    ('interest statement', 'interest-statement'),
+    ('interest', 'interest-statement'),
+    ('rental statement', 'rental-statement'),
+    ('owner statement', 'rental-statement'),
+    ('rental', 'rental-statement'),
+    ('rent', 'rental-statement'),
 ]
 
 _DATE_FORMATS = (
@@ -66,11 +77,23 @@ _DATE_FORMATS = (
 
 
 def classify_subject(subject):
-    lower = (subject or '').lower()
+    # Collapse internal whitespace + strip the ends so stray double-spaces
+    # or leading/trailing whitespace in a real email subject can't dodge a
+    # match; \b-bounded search so a keyword only matches as a whole word.
+    normalized = re.sub(r'\s+', ' ', (subject or '')).strip().lower()
     for keyword, doc_type in SUBJECT_TYPE_KEYWORDS:
-        if keyword in lower:
+        if re.search(rf'\b{re.escape(keyword)}\b', normalized):
             return doc_type
     return 'other'
+
+
+def _template_is_approved(doc_type):
+    """Req 9: an OcrTemplate's status='enabled' (the admin panel's
+    "approve") is what allows a matching statement to skip Pending Review
+    and auto-create its transactions. No row for this document_type at
+    all (e.g. the 'other' catch-all) defaults to NOT trusted — approval
+    has to be explicit, never implicit."""
+    return OcrTemplate.objects.filter(document_type=doc_type, status='enabled').exists()
 
 
 def _parse_flexible_date(date_str):
@@ -269,6 +292,40 @@ def _get_or_create_document(owner_id, property_id, file_name, file_url, doc_type
     )
 
 
+def _claim_or_find_duplicate_document(owner_id, file_hash, file_name, file_size, new_document_kwargs):
+    """Req 2/11 — the actual duplicate-protection mechanism: creating the
+    Document and registering its content hash happen as one atomic unit
+    against the existing apps.ocr.DocumentDuplicate table (reused as-is,
+    not a new field — see its docstring), which has a DB-level unique
+    constraint on (owner, file_hash). If this exact file was already
+    registered for this owner — by an earlier email, or by another
+    worker/request racing this one right now — the insert collides on
+    that constraint and this returns the ALREADY-existing Document instead
+    of creating a second one. That collision is the duplicate check; there
+    is no separate "look first, then create" step for a race to slip
+    through.
+
+    Returns (document, created). `document` is None only in the
+    pathological case where the colliding row vanished between the
+    IntegrityError and the follow-up read (caller should treat that as
+    "couldn't determine — don't skip").
+    """
+    try:
+        with db_transaction.atomic():
+            document = Document.objects.create(**new_document_kwargs)
+            DocumentDuplicate.objects.create(
+                owner_id=owner_id, file_hash=file_hash,
+                document_signature={'fileName': file_name, 'fileSize': file_size},
+                original_document=document, detection_type='content-sha256',
+            )
+        return document, True
+    except IntegrityError:
+        existing = DocumentDuplicate.objects.filter(
+            owner_id=owner_id, file_hash=file_hash
+        ).select_related('original_document').first()
+        return (existing.original_document if existing else None), False
+
+
 def _iter_attachments(msg):
     """EmailAttachment rows if any exist; otherwise the legacy single
     attachment_url/attachment_name pair some older rows only have."""
@@ -310,27 +367,70 @@ def process_email_message(msg):
         return msg.processing_log
 
     doc_type = classify_subject(msg.subject)
+    template_approved = _template_is_approved(doc_type)
     msg.status = 'processing'
     msg.save(update_fields=['status'])
 
     total_created = 0
     total_unresolved = 0
     total_extracted = 0
+    total_awaiting_template = 0
+    total_duplicates = 0
     any_failed = False
     confidences = []
 
     for att in attachments:
         document = getattr(att, 'document', None)
         if document is None:
-            document = _get_or_create_document(
-                msg.user_id, msg.property_id, _attachment_name(att), _attachment_url(att), doc_type,
-            )
+            att_url = _attachment_url(att)
+            att_name = _attachment_name(att)
+
+            # Req 2: fetch once up front to hash the actual content — this
+            # is what catches the same statement arriving via a different
+            # email/Message-ID (the Message-ID check in ingest_email only
+            # catches a retried *delivery* of the same email, not a
+            # genuinely separate email with identical content).
+            try:
+                content = _fetch_attachment_bytes(att_url)
+            except Exception:
+                content = None
+
+            created = True
+            if content is not None:
+                file_hash = hashlib.sha256(content).hexdigest()
+                document, created = _claim_or_find_duplicate_document(
+                    msg.user_id, file_hash, att_name, len(content),
+                    dict(
+                        owner_id=msg.user_id, property_id=msg.property_id,
+                        file_name=att_name or 'email-attachment', file_url=att_url,
+                        file_type=_guess_content_type(att_name, att_url),
+                        file_size=len(content), status='pending', document_type=doc_type,
+                    ),
+                )
+                if document is None:
+                    # Pathological race edge case (see
+                    # _claim_or_find_duplicate_document) — fall back to a
+                    # plain create rather than silently dropping the
+                    # attachment.
+                    document = _get_or_create_document(msg.user_id, msg.property_id, att_name, att_url, doc_type)
+                    created = True
+            else:
+                # Couldn't fetch to hash — create normally; run_ocr_extraction
+                # will hit (and record) the same fetch failure below.
+                document = _get_or_create_document(msg.user_id, msg.property_id, att_name, att_url, doc_type)
+
             if hasattr(att, 'file_url'):  # a real EmailAttachment row, not the msg-as-attachment shim
                 att.document = document
                 att.save(update_fields=['document'])
             if msg.document_id is None:
                 msg.document = document
                 msg.save(update_fields=['document'])
+
+            if not created:
+                # Identical content already processed for this owner — no
+                # new OCR run, no new document, no new transaction.
+                total_duplicates += 1
+                continue
         elif document.status == 'completed':
             # Already resolved on a prior run — nothing to redo for this one.
             continue
@@ -345,6 +445,15 @@ def process_email_message(msg):
             (li.property_name, li) for li in DocumentLineItem.objects.filter(document=document, ocr_job=job)
         ]
         total_extracted += len(named_items)
+
+        if not template_approved:
+            # Req 9: without an approved OcrTemplate for this document type,
+            # extraction still runs (so the admin has something to review),
+            # but it never bypasses Pending Review — the line items stay
+            # unconverted for AdminOcrApproveLineItemsView to turn into
+            # transactions once a human signs off.
+            total_awaiting_template += len(named_items)
+            continue
 
         period_field = ExtractedData.objects.filter(
             document=document, ocr_job=job, field_name='statement_period_to'
@@ -406,9 +515,20 @@ def process_email_message(msg):
             f'Created {total_created} transaction(s); {total_unresolved} line item(s) need a property match'
             + (' (and some attachments failed OCR)' if any_failed else '') + '.'
         )
+    elif total_awaiting_template:
+        msg.status = 'needs_review'
+        summary = (
+            f'Extracted {total_awaiting_template} line item(s) — "{doc_type}" has no approved OCR template yet, '
+            'so this needs admin review before transactions are created.'
+        )
     elif total_extracted:
         msg.status = 'needs_review'
         summary = f'Extracted {total_extracted} line item(s) but could not resolve a property for any of them — needs manual review.'
+    elif total_duplicates and not any_failed:
+        # Req 2: every attachment on this email matched content already
+        # processed for this owner — correctly a no-op, not an error.
+        msg.status = 'processed'
+        summary = f'{total_duplicates} attachment(s) are duplicates of already-processed statement(s) — no new transactions created.'
     else:
         msg.status = 'needs_review'
         summary = 'No transactions could be extracted from this email — needs manual review.'
@@ -419,31 +539,64 @@ def process_email_message(msg):
     return summary
 
 
+# "Run OCR Job Now" (Req 1): only ever eligible for a message still waiting
+# on OCR — never a message that's already processed, already rejected, or
+# already hard-failed. Re-running OCR on an already-decided statement is a
+# different, deliberate action (AdminOcrReprocessView, scoped to one
+# Document) — this button is strictly "finish the ones still pending".
+RUN_JOB_ELIGIBLE_STATUSES = ('received', 'needs_review')
+
+
 def process_pending_messages(message_ids=None):
     """Runs process_email_message over outstanding EmailMessages. Shared by
-    the admin's on-demand "run now" button and the periodic task.
+    the admin's on-demand "run now" button and the periodic task. Enforced
+    here (not just hidden in the UI) — see RUN_JOB_ELIGIBLE_STATUSES: a
+    status outside (received, needs_review) is never processed by this
+    path, whether it arrived via message_ids or the default sweep.
 
     - No message_ids (the periodic job, and the admin's "run all"): only
       messages never yet turned into a Document — reprocessing an already
       OCR'd message on every hourly tick would just duplicate transactions.
     - Explicit message_ids (an admin re-selecting specific rows, e.g. after
-      mapping a user or fixing a property): treated as a deliberate retry,
-      so it reruns regardless of prior outcome — except one already mid-run.
-      Per-attachment Documents already 'completed' are skipped even on a
-      forced retry (see process_email_message); a genuine "this was wrong,
-      redo it" retry is apps.admin_panel.views_ocr.AdminOcrReprocessView,
-      scoped to one Document, not the whole email.
+      mapping a user or fixing a property): still restricted to the same
+      eligible statuses — selecting an already-processed/rejected row is a
+      no-op here, not a forced redo.
 
-    Returns {processed, needs_review, failed, total} counts."""
+    Race safety (Req 11): each message is "claimed" with a single
+    conditional UPDATE (status still eligible -> 'processing') before this
+    process reads/touches it. That UPDATE is atomic at the database level,
+    so if the periodic task and an admin's click (or two overlapping
+    periodic ticks) both pick up the same message, only one UPDATE affects
+    a row — the other claims 0 rows and skips it instead of both of them
+    racing through process_email_message and double-creating transactions.
+
+    Returns {processed, needs_review, failed, skipped, total} counts."""
     from .models import EmailMessage
 
+    base_qs = EmailMessage.objects.filter(status__in=RUN_JOB_ELIGIBLE_STATUSES)
     if message_ids:
-        qs = EmailMessage.objects.filter(id__in=message_ids).exclude(status='processing')
+        candidate_ids = list(base_qs.filter(id__in=message_ids).values_list('id', flat=True))
+        # Explicitly requested but not eligible at all (already processed/
+        # rejected/failed) — count these as skipped too, not just the
+        # race-lost ones below, so a caller selecting only ineligible rows
+        # gets an accurate "N skipped" instead of a silent no-op.
+        already_ineligible = len(message_ids) - len(candidate_ids)
     else:
-        qs = EmailMessage.objects.filter(document__isnull=True).exclude(status__in=('processed', 'processing'))
+        candidate_ids = list(base_qs.filter(document__isnull=True).values_list('id', flat=True))
+        already_ineligible = 0
 
-    counts = {'processed': 0, 'needs_review': 0, 'failed': 0, 'total': 0}
-    for msg in qs.prefetch_related('attachments'):
+    counts = {'processed': 0, 'needs_review': 0, 'failed': 0, 'skipped': already_ineligible, 'total': 0}
+    for msg_id in candidate_ids:
+        claimed = EmailMessage.objects.filter(
+            id=msg_id, status__in=RUN_JOB_ELIGIBLE_STATUSES
+        ).update(status='processing')
+        if not claimed:
+            # Lost the race to another worker/click, or its status moved
+            # out of eligibility between the list query and here.
+            counts['skipped'] += 1
+            continue
+
+        msg = EmailMessage.objects.prefetch_related('attachments').get(id=msg_id)
         process_email_message(msg)
         counts['total'] += 1
         counts[msg.status] = counts.get(msg.status, 0) + 1

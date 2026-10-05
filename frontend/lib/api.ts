@@ -584,6 +584,23 @@ export const notificationsApi = {
     },
 };
 
+// A document the current user owns — GET /api/ocr/documents row shape
+// (apps.ocr.views.DocumentListView via apps.common.utils.model_row).
+export interface UserDocument {
+    id: string;
+    owner_id: string;
+    property_id: string | null;
+    property_name: string | null;
+    file_name: string;
+    file_url: string;
+    file_type: string;
+    file_size: number;
+    status: string;
+    document_type: string | null;
+    ocr_confidence: number | null;
+    created_at: string;
+}
+
 // Documents API — raw multipart upload, bypasses apiFetch since that forces
 // a JSON Content-Type header (which breaks multipart/form-data uploads).
 export const documentsApi = {
@@ -612,6 +629,26 @@ export const documentsApi = {
     // browsable. Exchange one for a short-lived presigned URL before opening it.
     async getViewUrl(storedUrl: string): Promise<ApiResponse<{ url: string }>> {
         return apiFetch<{ url: string }>(`/api/ocr/document-url?url=${encodeURIComponent(storedUrl)}`);
+    },
+
+    // DocumentListView's JSON puts `documents`/`count` at the response root
+    // (an older convention this endpoint kept from the Node backend it was
+    // ported from) instead of nesting them under `data` like the rest of
+    // this file — re-shaped here so callers can use the same `res.data?.x`
+    // pattern as every other API in this app.
+    async getAll(params?: { status?: string; propertyId?: string; documentType?: string; limit?: number; offset?: number }): Promise<ApiResponse<{ documents: UserDocument[]; count: number }>> {
+        const searchParams = new URLSearchParams();
+        if (params) {
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== undefined) searchParams.append(key, String(value));
+            });
+        }
+        const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+        const raw = await apiFetch(`/api/ocr/documents${query}`) as unknown as {
+            success: boolean; documents?: UserDocument[]; count?: number; error?: string;
+        };
+        if (!raw.success) return { success: false, error: raw.error };
+        return { success: true, data: { documents: raw.documents || [], count: raw.count || 0 } };
     },
 };
 

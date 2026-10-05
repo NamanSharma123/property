@@ -2,12 +2,16 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Search, Link2, FileInput, ChevronLeft, ChevronRight, PlayCircle, Loader2 } from "lucide-react";
+import { Search, Link2, FileInput, ChevronLeft, ChevronRight, PlayCircle, Loader2, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import adminApi, { EmailMessage } from "@/lib/adminApi";
 
 const statusTone: Record<string, string> = {
@@ -87,6 +91,12 @@ export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean })
     const res = await adminApi.emailInbox.convert(m.id);
     if (res.success) { toast.success(res.message || "Converted"); load(); }
     else toast.error(res.error || "Convert failed");
+  };
+
+  const deleteFromServer = async (m: EmailMessage) => {
+    const res = await adminApi.emailInbox.deleteFromServer(m.id);
+    if (res.success) { toast.success(res.message || "Deleted from server"); load(); }
+    else toast.error(res.error || "Delete failed");
   };
 
   const runJob = async () => {
@@ -169,7 +179,30 @@ export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean })
                   <div className="flex items-center justify-end gap-1">
                     <button onClick={() => setMapping(m)} className="p-1.5 rounded-md text-gray-400 hover:text-primary hover:bg-gray-50" title="Map to user/property"><Link2 size={16} /></button>
                     {m.user_id && (m.attachment_url || m.attachments?.length > 0) && !m.document_id && (
-                      <button onClick={() => convert(m)} className="p-1.5 rounded-md text-gray-400 hover:text-primary hover:bg-gray-50" title="Convert to document"><FileInput size={16} /></button>
+                      <button onClick={() => convert(m)} className="p-1.5 rounded-md text-gray-400 hover:text-primary hover:bg-gray-50" title="Add to Document Vault (files the attachment without running OCR)"><FileInput size={16} /></button>
+                    )}
+                    {isFullAdmin && m.source_s3_bucket && !m.source_deleted_at && (m.status === "failed" || m.document_status === "failed") && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50" title="Delete email from server (rejected/failed only)"><Trash2 size={16} /></button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete this email from the server?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Removes the original email from the mail server (S3) only — any document/transaction
+                              already recorded from it stays exactly as-is. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => deleteFromServer(m)}>Delete from server</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                    {m.source_deleted_at && (
+                      <span className="text-xs text-gray-400" title={`Deleted from server ${new Date(m.source_deleted_at).toLocaleString()}`}>deleted</span>
                     )}
                   </div>
                 </TableCell>

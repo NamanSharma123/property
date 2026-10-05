@@ -62,34 +62,43 @@ Concretely, step by step, once you push to `main`:
 
 You can watch all of this happen live: GitHub repo → **Actions** tab → click the running workflow.
 
-## Custom domain — not set up yet, here's how when you're ready
+## Attach `investview.com.au`
 
-Right now your app lives at the auto-generated `*.awsapprunner.com`
-addresses above. Those are real, working, HTTPS-secured URLs — a custom
-domain is a nice-to-have for branding, not a functional requirement.
+The app is already deployed at the App Runner URLs above. Map the website,
+API, and Django admin to separate hostnames:
 
-**When you own a domain** (bought through Route 53, GoDaddy, Namecheap,
-whatever), here's the process:
+| Purpose | Hostname | App Runner service |
+|---|---|---|
+| Website | `investview.com.au` (and optionally `www.investview.com.au`) | `properly-frontend` |
+| API and Django admin | `api.investview.com.au` (`/api/...` and `/admin/`) | `properly-backend` |
 
-1. **AWS Console → App Runner → your service → Custom domains tab → Link domain**
-2. Type in the domain/subdomain you want, e.g. `app.yourdomain.com`
-3. App Runner gives you 2-3 DNS records to create (usually a CNAME and some
-   validation records)
-4. Add those records at wherever your domain is registered (Route 53, or
-   your registrar's DNS settings page)
-5. Wait for DNS to propagate (minutes to a few hours) and AWS to issue an
-   HTTPS certificate automatically (App Runner handles this part for you —
-   no manual certificate work needed)
-6. Once it shows "Active," `app.yourdomain.com` serves the exact same app as
-   the `awsapprunner.com` URL — both keep working
+In AWS Console, open each App Runner service → **Custom domains** → **Link
+domain**. Link the website hostname(s) to the frontend service and
+`api.investview.com.au` to the backend service. For every hostname, App Runner
+shows the required DNS target and certificate validation records. Copy those
+records exactly into the DNS zone at your domain registrar, then wait until
+App Runner reports the domain as **Active**. Keep existing MX/TXT records used
+for email; only add or change the records App Runner specifies. Do not guess
+the CNAME/validation targets.
 
-Do this for the **frontend** service primarily (that's what users type in
-their browser). The backend can stay on its `awsapprunner.com` address
-forever since users never see it directly — only the frontend calls it.
+After the API hostname is active:
 
-If/when you get a domain, tell me the domain name and I'll walk through
-this with you step by step, including double-checking the DNS records are
-exactly right.
+1. In GitHub repository **Settings → Secrets and variables → Actions → Variables**,
+   set `NEXT_PUBLIC_API_URL` to `https://api.investview.com.au`.
+2. Set the App Runner backend service `ALLOWED_HOSTS` environment variable to
+   `api.investview.com.au` and `CORS_ALLOWED_ORIGINS` to
+   `https://investview.com.au,https://www.investview.com.au` (include `www`
+   only if you linked it).
+3. Deploy the frontend workflow so its browser bundle uses the new API URL.
+   Restart/redeploy the backend after changing its environment variables.
+4. Check `https://investview.com.au`, sign in, check an API-backed page, and
+   open `https://api.investview.com.au/admin/` to confirm the Django admin
+   login page loads. The frontend app's own admin screens remain under the
+   website; Django's built-in admin is served by the backend at `/admin/`.
+
+The API hostname is used by browser JavaScript, so it needs a trusted HTTPS
+certificate too. The app code now defaults CORS to the website domains and
+lets you override the list with `CORS_ALLOWED_ORIGINS`.
 
 ## Things worth doing before this handles real users' data
 

@@ -23,7 +23,7 @@ from .utils import log_admin_action
 class AdminEmailInboxListView(AdminProtectedView):
     def get(self, request):
         params = request.query_params
-        qs = EmailMessage.objects.select_related('user', 'property').prefetch_related('attachments')
+        qs = EmailMessage.objects.select_related('user', 'property', 'document').prefetch_related('attachments')
 
         if params.get('status'):
             qs = qs.filter(status=params['status'])
@@ -48,7 +48,7 @@ class AdminEmailInboxListView(AdminProtectedView):
 
 class AdminEmailDetailView(AdminProtectedView):
     def get(self, request, message_id):
-        msg = EmailMessage.objects.select_related('user', 'property').prefetch_related('attachments').filter(id=message_id).first()
+        msg = EmailMessage.objects.select_related('user', 'property', 'document').prefetch_related('attachments').filter(id=message_id).first()
         if not msg:
             return error_response('Email message not found', 404)
         return Response({'success': True, 'data': {'emailMessage': email_message_row(msg)}})
@@ -182,12 +182,85 @@ class AdminEmailRunJobView(AdminProtectedView):
         log_admin_action(request.user, 'email.run_ocr_job', request=request, entity_type='email_message',
                           new_value=counts)
 
-        return Response({
-            'success': True,
-            'data': counts,
-            'message': (
+        if counts['total']:
+            message = (
                 f"Processed {counts['total']} email(s): "
                 f"{counts['processed']} processed, {counts['needs_review']} need review, "
                 f"{counts['failed']} failed."
-            ) if counts['total'] else 'No outstanding emails to process.',
+            )
+        elif counts['skipped']:
+            # Req 1: this button only ever touches received/needs_review
+            # messages — a nonzero skip count here means every selected row
+            # was already processed/rejected/failed and was correctly left
+            # alone, not silently reprocessed.
+            message = f"{counts['skipped']} email(s) skipped — already processed or not eligible for OCR."
+        else:
+            message = 'No outstanding emails to process.'
+
+        return Response({'success': True, 'data': counts, 'message': message})
+
+
+class AdminEmailDeleteFromServerView(AdminProtectedView):
+    """POST /api/admin/email-inbox/<id>/delete-from-server — Req 6. Removes
+    the ORIGINAL raw email from the S3 bucket SES delivered it into (the
+    "server"/inbox in this architecture — see ses_adapter.py; there's no
+    IMAP/Gmail/Graph integration in this project, inbound mail only ever
+    arrives via SES). Manual, admin-triggered — the safer of the two
+    options the spec allows, since conditions for safe automatic deletion
+    (and what counts as "large") vary per deployment and shouldn't be
+    guessed at here.
+
+    Conservative eligibility, enforced server-side (Req 13): only once the
+    statement has reached a terminal, already-recorded outcome — either
+    the email itself hard-failed OCR, or an admin rejected its document
+    (Document.status='failed' is what AdminOcrRejectView sets) — so the
+    application's own copy of whatever useful data existed is already
+    captured before the source is removed. Deleting the source email does
+    NOT touch the EmailMessage/Document/Transaction rows (Req 6 explicit
+    requirement) — only source_deleted_at is set, as a record that the
+    server copy is gone."""
+    allow_support = False
+
+    def post(self, request, message_id):
+        import boto3
+        from django.conf import settings
+        from django.utils import timezone
+
+        msg = EmailMessage.objects.select_related('document').filter(id=message_id).first()
+        if not msg:
+            return error_response('Email message not found', 404)
+
+        if msg.source_deleted_at:
+            return error_response('This email was already deleted from the server', 400)
+
+        if not msg.source_s3_bucket or not msg.source_s3_key:
+            return error_response(
+                'No source location recorded for this email (it may predate this feature, or arrived via the test webhook, not SES) — nothing to delete.',
+                400,
+            )
+
+        is_rejected_or_failed = msg.status == 'failed' or (msg.document_id and msg.document.status == 'failed')
+        if not is_rejected_or_failed:
+            return error_response(
+                'Only a rejected or failed email can be deleted from the server — this one is still active '
+                '(a human/the system may still need its original attachment).',
+                400,
+            )
+
+        try:
+            s3 = boto3.client('s3', region_name=settings.SES_INBOUND_S3_REGION)
+            s3.delete_object(Bucket=msg.source_s3_bucket, Key=msg.source_s3_key)
+        except Exception as exc:
+            return error_response(f'Failed to delete from server: {exc}', 500)
+
+        msg.source_deleted_at = timezone.now()
+        msg.save(update_fields=['source_deleted_at'])
+
+        log_admin_action(request.user, 'email.delete_from_server', request=request, entity_type='email_message',
+                          entity_id=msg.id, new_value={'bucket': msg.source_s3_bucket, 'key': msg.source_s3_key})
+
+        return Response({
+            'success': True,
+            'data': {'emailMessage': email_message_row(msg)},
+            'message': 'Deleted the original email from the server. Your recorded document/transaction data is unaffected.',
         })

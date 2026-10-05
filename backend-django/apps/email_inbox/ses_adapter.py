@@ -271,6 +271,10 @@ class SESInboundNotificationView(PublicView):
             'messageId': parsed['messageId'] or mail.get('messageId'),
             'attachments': uploaded_attachments,
             'receivedAt': received_at.isoformat() if received_at else None,
+            # Req 6: so a later "delete from server" admin action knows the
+            # exact S3 object to remove, instead of having to re-derive it.
+            'sourceS3Bucket': bucket,
+            'sourceS3Key': key,
         }
 
         msg, created, error = ingest_email(data)
