@@ -2,14 +2,18 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Eye, Check, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Eye, Check, X, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import adminApi, { AdminDocument } from "@/lib/adminApi";
 import ReviewDocumentDialog from "./ReviewDocumentDialog";
 
-export default function ReviewQueueTab({ status }: { status: "pending" | "completed" | "failed" }) {
+export default function ReviewQueueTab({ status, isFullAdmin }: { status: "pending" | "completed" | "failed"; isFullAdmin?: boolean }) {
   const [rows, setRows] = useState<AdminDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -17,6 +21,7 @@ export default function ReviewQueueTab({ status }: { status: "pending" | "comple
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reviewing, setReviewing] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,6 +57,23 @@ export default function ReviewQueueTab({ status }: { status: "pending" | "comple
     const res = await adminApi.ocr.bulkReject(Array.from(selected));
     if (res.success) { toast.success(res.message || "Rejected"); load(); }
     else toast.error(res.error || "Bulk reject failed");
+  };
+
+  const remove = async (id: string) => {
+    setBusyId(id);
+    const res = await adminApi.documents.remove(id);
+    setBusyId(null);
+    if (res.success) {
+      toast.success("Document deleted");
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      load();
+    } else {
+      toast.error(res.error || "Delete failed");
+    }
   };
 
   return (
@@ -97,10 +119,31 @@ export default function ReviewQueueTab({ status }: { status: "pending" | "comple
                 </TableCell>
                 <TableCell className="text-xs text-gray-500 whitespace-nowrap">{new Date(d.created_at).toLocaleDateString()}</TableCell>
                 <TableCell>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end items-center gap-1">
                     <button onClick={() => setReviewing(d.id)} className="p-1.5 rounded-md text-gray-400 hover:text-primary hover:bg-gray-50" title="Review">
                       <Eye size={16} />
                     </button>
+                    {isFullAdmin && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button disabled={busyId === d.id} className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40" title="Delete">
+                            <Trash2 size={16} />
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {d.file_name} will be permanently removed from the review queue. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => remove(d.id)}>Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

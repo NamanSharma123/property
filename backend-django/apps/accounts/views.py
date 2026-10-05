@@ -85,7 +85,10 @@ class SignupView(PublicView):
         email = (data.get('email') or '').strip().lower()
         phone = (data.get('phone') or '').strip()
         password = data.get('password') or ''
-        role = data.get('role') or 'staff'
+        # Public signup must ALWAYS create a regular portal user.
+        # Never trust a client-supplied `role` — otherwise anyone can
+        # self-register as admin/manager and walk into /admin.
+        role = 'staff'
 
         errors = []
         if not name:

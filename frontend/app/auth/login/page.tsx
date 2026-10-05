@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Building2, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react'
 import { login } from '@/lib/auth'
+import { clearTokens } from '@/lib/api'
 
 export default function LoginPage() {
     const router = useRouter()
@@ -24,8 +25,16 @@ export default function LoginPage() {
             const result = await login(email, password)
 
             if (result.success && result.user) {
-                // Redirect users to dashboard
-                router.push('/dashboard')
+                // STRICT: this portal is staff-only. Never leave an admin
+                // token in the user slot — otherwise the next hard refresh
+                // auto-logs the user tab into the admin panel.
+                if (result.user.role === 'admin' || result.user.role === 'manager') {
+                    clearTokens('user')
+                    setError('This is the user portal. Please sign in at /admin/login with your admin account.')
+                    setLoading(false)
+                } else {
+                    router.push('/dashboard')
+                }
             } else {
                 setError(result.error || 'Failed to sign in')
                 setLoading(false)

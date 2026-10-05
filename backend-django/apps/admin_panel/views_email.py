@@ -53,6 +53,22 @@ class AdminEmailDetailView(AdminProtectedView):
             return error_response('Email message not found', 404)
         return Response({'success': True, 'data': {'emailMessage': email_message_row(msg)}})
 
+    def delete(self, request, message_id):
+        from .permissions import is_full_admin
+        if not is_full_admin(request.user):
+            return error_response('Admin access required', 403)
+        msg = EmailMessage.objects.filter(id=message_id).first()
+        if not msg:
+            return error_response('Email message not found', 404)
+
+        snapshot = email_message_row(msg)
+        msg.delete()
+
+        log_admin_action(request.user, 'email.delete', request=request, entity_type='email_message',
+                          entity_id=message_id, old_value=snapshot)
+
+        return Response({'success': True, 'message': 'Email removed successfully'})
+
 
 class AdminEmailMapView(AdminProtectedView):
     """POST /api/admin/email-inbox/<id>/map — {userId?, propertyId?}. Lets

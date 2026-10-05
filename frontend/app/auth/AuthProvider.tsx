@@ -5,7 +5,7 @@ import { getSession } from '@/lib/auth';
 import { useAuthSync } from '@/hooks/useFormPersistence';
 
 type AuthContextType = {
-  user: { email: string; name?: string; uniqueId?: string } | null;
+  user: { email: string; name?: string; uniqueId?: string; role?: string } | null;
   loading: boolean;
   refreshUser: () => Promise<void>;
 };
@@ -13,7 +13,7 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType>({ user: null, loading: true, refreshUser: async () => { } });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<{ email: string; name?: string; uniqueId?: string } | null>(null);
+  const [user, setUser] = useState<{ email: string; name?: string; uniqueId?: string; role?: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadUser = async () => {

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ResponsiveSidebar } from "@/app/dashboard/_components/Layout/SideBar/ResponsiveSidebar"
 import TopBar from "@/app/dashboard/_components/Layout/TopBar/TopBar";
 import { getSession } from '@/lib/auth';
+import { clearTokens } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Toaster } from '@/components/ui/sonner';
 import { SWRProvider } from '@/components/providers/swr-provider';
@@ -11,16 +12,27 @@ import { SWRProvider } from '@/components/providers/swr-provider';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
-  const [session, setSession] = useState<{ email: string; name?: string; uniqueId?: string; inboundEmail?: string } | null>(null);
+  const [session, setSession] = useState<{ email: string; name?: string; uniqueId?: string; inboundEmail?: string; role?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        const sessionData = await getSession();
+        // User panel reads ONLY user tokens — an admin tab open in the
+        // same browser (different localStorage key) can never leak in here.
+        const sessionData = await getSession('user');
         if (!sessionData) {
           router.push('/auth/login');
+        } else if (sessionData.role === 'admin' || sessionData.role === 'manager') {
+          // STRICT: user panel is staff-only. An admin-role token in the
+          // user slot can only be a stale pre-fix shared token (post-fix
+          // admin logins never write here) — drop it so it can never
+          // auto-login anyone into the wrong panel, then ask for a fresh
+          // staff login. The real admin session (separate admin key) is
+          // untouched, so an open /admin tab keeps working.
+          clearTokens('user');
+          router.replace('/auth/login');
         } else {
           setSession(sessionData);
         }

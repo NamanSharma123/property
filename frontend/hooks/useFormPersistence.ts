@@ -114,14 +114,16 @@ export function useTabVisibility(
 }
 
 /**
- * Hook to sync auth state across multiple tabs
+ * Hook to sync auth state across multiple tabs.
+ * Watches BOTH portal token keys — user and admin sessions are independent,
+ * so a logout in one portal must not log out the other portal's tabs.
  */
 export function useAuthSync(onAuthChange: (isAuthenticated: boolean) => void) {
     useEffect(() => {
         const handleStorageChange = (e: StorageEvent) => {
-            if (e.key === 'accessToken' || e.key === 'refreshToken') {
-                // Token was added or removed in another tab
-                const hasToken = !!localStorage.getItem('accessToken');
+            if (e.key === 'refreshToken' || e.key === 'adminRefreshToken') {
+                // Token was added or removed in another tab (same portal)
+                const hasToken = !!localStorage.getItem(e.key);
                 onAuthChange(hasToken);
             }
         };
