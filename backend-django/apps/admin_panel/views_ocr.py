@@ -12,6 +12,7 @@ detail view (scoped to the latest OCRJob, full attempt history alongside
 it), approve/reject (+ bulk, each leaving a Review row), reprocess
 (re-OCR — a new OCRJob attempt), and per-field corrections.
 """
+import re
 from datetime import date as date_cls
 from decimal import Decimal, InvalidOperation
 
@@ -136,6 +137,19 @@ def _create_transaction_from_document(document, request, corrections):
     return transaction, None
 
 
+def _normalize_street_address(value):
+    """'1/3 Sugar Maple Pl, Park Ridge QLD 4125' -> '3 sugar maple pl' — drops
+    the suburb/state/postcode and any unit-number prefix (e.g. a statement's
+    '1/3 ...' / '2/3 ...' line items for a duplex that's tracked in this
+    system as a single parent Property), so it can be compared against a
+    plainer stored Property.name without the two needing identical text."""
+    value = (value or '').strip().lower()
+    value = value.split(',')[0]
+    value = re.sub(r'^\d+\s*/\s*', '', value)
+    value = re.sub(r'\s+', ' ', value)
+    return value.strip()
+
+
 class AdminOcrApproveLineItemsView(AdminProtectedView):
     """POST /api/admin/ocr/documents/<id>/approve-line-items — {propertyId?}.
     A multi-line statement (e.g. a rental statement email with 9 charges)
@@ -191,6 +205,13 @@ class AdminOcrApproveLineItemsView(AdminProtectedView):
             property_id = override_property_id
             if not property_id and item.property_name:
                 match = next((p for p in owner_properties if p['name'].strip().lower() == item.property_name.strip().lower()), None)
+                if not match:
+                    # Exact text match failed — fall back to a unit-prefix-insensitive
+                    # address match, but only when it resolves to exactly one property
+                    # (an ambiguous match is left for the admin to assign manually).
+                    normalized_target = _normalize_street_address(item.property_name)
+                    candidates = [p for p in owner_properties if _normalize_street_address(p['name']) == normalized_target]
+                    match = candidates[0] if len(candidates) == 1 else None
                 property_id = match['id'] if match else None
             if not property_id:
                 property_id = single_property_id
@@ -232,7 +253,7 @@ class AdminOcrApproveLineItemsView(AdminProtectedView):
                           entity_id=document.id, new_value={'created': len(created), 'skipped': skipped})
 
         return Response({
-            'success': True,
+            'success': bool(created),
             'data': {
                 'document': model_row(document),
                 'transactions': [transaction_row(t) for t in created],
@@ -241,7 +262,8 @@ class AdminOcrApproveLineItemsView(AdminProtectedView):
             },
             'message': (
                 f'Created {len(created)} transaction(s)' + (f'; {skipped} line item(s) skipped (no property match)' if skipped else '')
-            ) if created else 'No line items could be resolved to a property — none created',
+            ) if created else None,
+            'error': None if created else 'No line items could be resolved to a property — select a property above and try again',
         }, status=200 if created else 400)
 
 
