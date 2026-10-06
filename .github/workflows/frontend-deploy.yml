@@ -65,6 +65,17 @@ jobs:
           docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           docker push "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
-      - name: Trigger App Runner deployment
+      - name: Deploy to EC2
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
-          aws apprunner start-deployment --service-arn "${{ secrets.FRONTEND_APPRUNNER_SERVICE_ARN }}"
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          TOKEN=$(aws ecr get-login-password --region "$AWS_REGION")
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key ubuntu@${{ secrets.EC2_HOST }} "
+            echo '$TOKEN' | sudo docker login --username AWS --password-stdin $ECR_REGISTRY &&
+            sudo docker pull $ECR_REGISTRY/properly-frontend:latest &&
+            cd /opt/properly && sudo docker compose up -d frontend
+          "
