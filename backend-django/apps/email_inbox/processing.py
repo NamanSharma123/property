@@ -35,7 +35,7 @@ from io import BytesIO
 
 from django.db import IntegrityError
 from django.db import transaction as db_transaction
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from apps.ocr import statement_parser
@@ -345,6 +345,42 @@ def _attachment_name(att):
     return getattr(att, 'file_name', None) or getattr(att, 'attachment_name', None)
 
 
+def _email_documents(msg):
+    docs = {att.document for att in msg.attachments.all() if att.document_id}
+    if msg.document_id:
+        docs.add(msg.document)
+    return docs
+
+
+def email_status_from_documents(msg):
+    """The email-level status implied by its attachments' review outcome:
+    'processed' once every document is approved/completed, 'failed' once
+    every document is decided and at least one was rejected — None while
+    any document is still awaiting review."""
+    docs = _email_documents(msg)
+    if not docs or any(d.status not in ('completed', 'failed') for d in docs):
+        return None
+    return 'processed' if all(d.status == 'completed' for d in docs) else 'failed'
+
+
+def sync_email_status_for_document(document):
+    """Called after an admin approves/rejects a Document: moves the email(s)
+    it came from out of needs_review so "Run OCR job now" (which only
+    touches received/needs_review) leaves a decided statement alone, and a
+    rejected one lands in the email list's failed state — which is what
+    makes it eligible for "Delete from server"."""
+    from .models import EmailMessage
+
+    messages = EmailMessage.objects.filter(
+        Q(document=document) | Q(attachments__document=document)
+    ).distinct().prefetch_related('attachments__document')
+    for msg in messages:
+        new_status = email_status_from_documents(msg)
+        if new_status and msg.status != new_status:
+            msg.status = new_status
+            msg.save(update_fields=['status'])
+
+
 def process_email_message(msg):
     """Processes one EmailMessage end to end: runs OCR on every attachment
     and, for each one whose result is unambiguous, creates the transaction
@@ -376,6 +412,7 @@ def process_email_message(msg):
     total_extracted = 0
     total_awaiting_template = 0
     total_duplicates = 0
+    total_decided = 0
     any_failed = False
     confidences = []
 
@@ -431,9 +468,17 @@ def process_email_message(msg):
                 # new OCR run, no new document, no new transaction.
                 total_duplicates += 1
                 continue
-        elif document.status == 'completed':
-            # Already resolved on a prior run — nothing to redo for this one.
+        elif document.status == 'completed' or document.reviewed_at:
+            # Already resolved on a prior run, or an admin already approved/
+            # rejected it — "Run OCR job now" must never re-OCR a decided
+            # statement (only Re-OCR in the review dialog does that).
+            total_decided += 1
             continue
+
+        # A re-run over a statement that already produced transactions (e.g.
+        # a partly-resolved one left in needs_review) must not auto-create
+        # them a second time — the fresh attempt goes to review instead.
+        has_prior_transactions = Transaction.objects.filter(source_document=document).exists()
 
         job = run_ocr_extraction(document)
         if job.status == 'failed':
@@ -446,7 +491,7 @@ def process_email_message(msg):
         ]
         total_extracted += len(named_items)
 
-        if not template_approved:
+        if not template_approved or has_prior_transactions:
             # Req 9: without an approved OcrTemplate for this document type,
             # extraction still runs (so the admin has something to review),
             # but it never bypasses Pending Review — the line items stay
@@ -503,7 +548,12 @@ def process_email_message(msg):
             document.save(update_fields=['status'])
         # else: leave 'pending' (already set by run_ocr_extraction) for review.
 
-    if any_failed and not total_created:
+    if total_decided and total_decided == len(attachments):
+        # Nothing left to OCR — every attachment was already approved or
+        # rejected; just reflect that decision on the email.
+        msg.status = email_status_from_documents(msg) or 'needs_review'
+        summary = 'All attachment(s) were already reviewed — nothing to re-OCR.'
+    elif any_failed and not total_created:
         msg.status = 'failed'
         summary = 'OCR failed on all attachment(s) — see the document(s) for the error.'
     elif total_created and not total_unresolved and not any_failed:
@@ -514,6 +564,12 @@ def process_email_message(msg):
         summary = (
             f'Created {total_created} transaction(s); {total_unresolved} line item(s) need a property match'
             + (' (and some attachments failed OCR)' if any_failed else '') + '.'
+        )
+    elif total_awaiting_template and template_approved:
+        msg.status = 'needs_review'
+        summary = (
+            f'Re-extracted {total_awaiting_template} line item(s) — this statement already has transactions, '
+            'so the new result needs admin review instead of creating them again.'
         )
     elif total_awaiting_template:
         msg.status = 'needs_review'
@@ -547,16 +603,22 @@ def process_email_message(msg):
 RUN_JOB_ELIGIBLE_STATUSES = ('received', 'needs_review')
 
 
-def process_pending_messages(message_ids=None):
+def process_pending_messages(message_ids=None, include_needs_review=False):
     """Runs process_email_message over outstanding EmailMessages. Shared by
     the admin's on-demand "run now" button and the periodic task. Enforced
     here (not just hidden in the UI) — see RUN_JOB_ELIGIBLE_STATUSES: a
     status outside (received, needs_review) is never processed by this
     path, whether it arrived via message_ids or the default sweep.
 
-    - No message_ids (the periodic job, and the admin's "run all"): only
-      messages never yet turned into a Document — reprocessing an already
-      OCR'd message on every hourly tick would just duplicate transactions.
+    - No message_ids, periodic job: only messages never yet turned into a
+      Document — re-OCRing every needs_review message on each hourly tick
+      would just churn out new attempts nobody asked for.
+    - No message_ids, admin's "Run OCR job now" (include_needs_review=True):
+      every received AND needs_review message — the button exists to retry
+      the ones still waiting (points discussed 04/10/2026). Already
+      approved/rejected attachments inside them are still skipped, and a
+      statement that already has transactions never gets them twice (see
+      process_email_message).
     - Explicit message_ids (an admin re-selecting specific rows, e.g. after
       mapping a user or fixing a property): still restricted to the same
       eligible statuses — selecting an already-processed/rejected row is a
@@ -582,7 +644,8 @@ def process_pending_messages(message_ids=None):
         # gets an accurate "N skipped" instead of a silent no-op.
         already_ineligible = len(message_ids) - len(candidate_ids)
     else:
-        candidate_ids = list(base_qs.filter(document__isnull=True).values_list('id', flat=True))
+        sweep_qs = base_qs if include_needs_review else base_qs.filter(document__isnull=True)
+        candidate_ids = list(sweep_qs.values_list('id', flat=True))
         already_ineligible = 0
 
     counts = {'processed': 0, 'needs_review': 0, 'failed': 0, 'skipped': already_ineligible, 'total': 0}

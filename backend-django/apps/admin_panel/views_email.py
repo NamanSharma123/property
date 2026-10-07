@@ -193,7 +193,7 @@ class AdminEmailRunJobView(AdminProtectedView):
 
     def post(self, request):
         ids = request.data.get('ids') or None
-        counts = process_pending_messages(message_ids=ids)
+        counts = process_pending_messages(message_ids=ids, include_needs_review=True)
 
         log_admin_action(request.user, 'email.run_ocr_job', request=request, entity_type='email_message',
                           new_value=counts)
@@ -279,4 +279,40 @@ class AdminEmailDeleteFromServerView(AdminProtectedView):
             'success': True,
             'data': {'emailMessage': email_message_row(msg)},
             'message': 'Deleted the original email from the server. Your recorded document/transaction data is unaffected.',
+        })
+
+
+class AdminEmailCleanupServerView(AdminProtectedView):
+    """POST /api/admin/email-inbox/cleanup-server — {minSizeMb?, dryRun?}.
+    Bulk version of delete-from-server (points discussed 04/10/2026: free
+    space taken by large/rejected emails): removes the raw source email of
+    every rejected/failed email in one go, optionally only those at least
+    minSizeMb large. See apps.email_inbox.cleanup."""
+    allow_support = False
+
+    def post(self, request):
+        from apps.email_inbox.cleanup import cleanup_server_emails
+
+        try:
+            min_size_mb = float(request.data.get('minSizeMb') or 0)
+        except (TypeError, ValueError):
+            return error_response('minSizeMb must be a number', 400)
+        dry_run = bool(request.data.get('dryRun'))
+
+        try:
+            result = cleanup_server_emails(min_size_bytes=int(min_size_mb * 1024 * 1024), dry_run=dry_run)
+        except Exception as exc:
+            return error_response(f'Server cleanup failed: {exc}', 500)
+
+        if not dry_run:
+            log_admin_action(request.user, 'email.cleanup_server', request=request, entity_type='email_message',
+                              new_value={'minSizeMb': min_size_mb, **result})
+
+        freed_mb = result['freed_bytes'] / 1024 / 1024
+        verb = 'Would delete' if dry_run else 'Deleted'
+        return Response({
+            'success': True,
+            'data': result,
+            'message': f"{verb} {result['deleted']} rejected/failed email(s) from the server ({freed_mb:.2f} MB)."
+                       + (f" {result['errors']} could not be deleted." if result['errors'] else ''),
         })

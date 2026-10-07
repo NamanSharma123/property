@@ -60,6 +60,74 @@ function MapDialog({ message, open, onOpenChange, onMapped }: { message: EmailMe
   );
 }
 
+// Bulk "delete from server" for rejected/failed emails — frees mail-server
+// space; the app's own document/transaction records are never touched.
+function CleanupServerDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void }) {
+  const [minSizeMb, setMinSizeMb] = useState("");
+  const [preview, setPreview] = useState<{ deleted: number; freed_bytes: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async (dryRun: boolean) => {
+    const size = minSizeMb ? parseFloat(minSizeMb) : 0;
+    if (Number.isNaN(size) || size < 0) { toast.error("Enter a valid size in MB"); return; }
+    setBusy(true);
+    const res = await adminApi.emailInbox.cleanupServer({ minSizeMb: size, dryRun });
+    setBusy(false);
+    if (!res.success || !res.data) { toast.error(res.error || "Cleanup failed"); return; }
+    if (dryRun) {
+      setPreview(res.data);
+    } else {
+      toast.success(res.message || "Server cleaned up");
+      setPreview(null);
+      onOpenChange(false);
+      onDone();
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setPreview(null); }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Clean up mail server</DialogTitle></DialogHeader>
+        <p className="text-xs text-gray-500">
+          Deletes the original email from the mail server (S3) for every <b>rejected or failed</b> email.
+          Documents and transactions already recorded stay exactly as they are. This cannot be undone.
+        </p>
+        <label className="text-xs text-gray-600">
+          Only emails larger than (MB) — leave empty for all rejected/failed emails
+          <Input
+            value={minSizeMb}
+            onChange={(e) => { setMinSizeMb(e.target.value); setPreview(null); }}
+            placeholder="e.g. 5"
+            type="number"
+            min="0"
+            className="mt-1"
+          />
+        </label>
+        {preview && (
+          <p className="text-sm text-gray-700">
+            {preview.deleted} email{preview.deleted === 1 ? "" : "s"} will be deleted, freeing {(preview.freed_bytes / 1024 / 1024).toFixed(2)} MB.
+          </p>
+        )}
+        <DialogFooter>
+          {preview ? (
+            <button
+              disabled={busy || preview.deleted === 0}
+              onClick={() => run(false)}
+              className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium disabled:opacity-40"
+            >
+              {busy ? "Deleting…" : `Delete ${preview.deleted} email${preview.deleted === 1 ? "" : "s"}`}
+            </button>
+          ) : (
+            <button disabled={busy} onClick={() => run(true)} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40">
+              {busy ? "Checking…" : "Preview"}
+            </button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean }) {
   const [rows, setRows] = useState<EmailMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,6 +139,7 @@ export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean })
   const [mapping, setMapping] = useState<EmailMessage | null>(null);
   const [runningJob, setRunningJob] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,18 +197,28 @@ export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean })
     <div>
       <div className="flex items-start justify-between gap-3 mb-3">
         <p className="text-xs text-gray-400">
-          Populated by the SES inbound-email webhook once it&apos;s wired to a real domain — empty until then.
-          The OCR job runs hourly in the background; use &quot;Run OCR job now&quot; to process outstanding emails immediately.
+          Emails sent to users&apos; unique addresses land here. New emails are OCR&apos;d hourly in the background;
+          &quot;Run OCR job now&quot; re-runs OCR on every <b>received</b> and <b>needs review</b> email immediately —
+          already processed or rejected statements are never re-OCR&apos;d.
         </p>
         {isFullAdmin && (
-          <button
-            onClick={runJob}
-            disabled={runningJob}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 whitespace-nowrap"
-          >
-            {runningJob ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />}
-            {runningJob ? "Running…" : "Run OCR job now"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCleaningUp(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+              title="Delete rejected/failed (optionally only large) emails from the mail server"
+            >
+              <Trash2 size={14} /> Clean up server
+            </button>
+            <button
+              onClick={runJob}
+              disabled={runningJob}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+            >
+              {runningJob ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />}
+              {runningJob ? "Running…" : "Run OCR job now"}
+            </button>
+          </div>
         )}
       </div>
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -256,6 +335,7 @@ export default function EmailInboxTab({ isFullAdmin }: { isFullAdmin: boolean })
       </div>
 
       <MapDialog message={mapping} open={!!mapping} onOpenChange={(o) => !o && setMapping(null)} onMapped={load} />
+      <CleanupServerDialog open={cleaningUp} onOpenChange={setCleaningUp} onDone={load} />
     </div>
   );
 }

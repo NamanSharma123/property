@@ -622,6 +622,14 @@ export const adminApi = {
         async deleteFromServer(id: string) {
             return adminFetch<{ emailMessage: EmailMessage }>(`/api/admin/email-inbox/${id}/delete-from-server`, { method: 'POST' });
         },
+        // Bulk version of deleteFromServer — every rejected/failed email,
+        // optionally only those at least minSizeMb large. dryRun previews.
+        async cleanupServer(data: { minSizeMb?: number; dryRun?: boolean }) {
+            return adminFetch<{ deleted: number; skipped_small: number; errors: number; freed_bytes: number; dry_run: boolean }>(
+                '/api/admin/email-inbox/cleanup-server',
+                { method: 'POST', body: JSON.stringify(data) }
+            );
+        },
     },
 
     support: {

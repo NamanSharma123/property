@@ -657,8 +657,19 @@ class DocumentViewUrlView(ProtectedView):
 
         key = stored_url[len(expected_prefix):].split('?', 1)[0]
         parts = key.split('/')
-        if len(parts) != 3 or parts[0] not in _UPLOAD_CATEGORIES or parts[1] != str(request.user.id):
-            return error_response('Document not found', 404)
+        owns_by_path = len(parts) == 3 and parts[0] in _UPLOAD_CATEGORIES and parts[1] == str(request.user.id)
+        if not owns_by_path:
+            # Email attachments are stored as email-attachments/<uuid>.<ext>
+            # (see apps.email_inbox.ses_adapter) — no user id in the key, so
+            # ownership comes from a Document/Transaction of this user that
+            # actually points at this exact file instead.
+            base_url = expected_prefix + key
+            owns_by_record = (
+                Document.objects.filter(owner_id=request.user.id, file_url=base_url).exists()
+                or Transaction.objects.filter(owner_id=request.user.id, receipt_url=base_url).exists()
+            )
+            if not owns_by_record:
+                return error_response('Document not found', 404)
 
         s3 = boto3.client('s3', region_name=settings.DOCUMENTS_S3_REGION)
         presigned_url = s3.generate_presigned_url(

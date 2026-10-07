@@ -13,6 +13,7 @@ it), approve/reject (+ bulk, each leaving a Review row), reprocess
 (re-OCR — a new OCRJob attempt), and per-field corrections.
 """
 import re
+from collections import Counter
 from datetime import date as date_cls
 from decimal import Decimal, InvalidOperation
 
@@ -21,6 +22,7 @@ from rest_framework.response import Response
 
 from apps.common.exceptions import error_response
 from apps.common.utils import coerce_date, model_row, to_snake
+from apps.email_inbox.processing import sync_email_status_for_document
 from apps.ocr.models import Document, DocumentLineItem, ExtractedData, OCRJob, OcrTemplate, Review
 from apps.properties.models import Property
 from apps.transactions.models import Transaction
@@ -199,9 +201,30 @@ class AdminOcrApproveLineItemsView(AdminProtectedView):
             or date_cls.today().isoformat()
         )
 
+        # Point 2 (no duplicates): after a Re-OCR the new attempt's line items
+        # are all unconverted again, including ones an earlier attempt already
+        # turned into transactions. Match those against this document's
+        # existing transactions (as a multiset, so two genuinely identical
+        # lines — e.g. two "Rent payment $1,200" — still both count) and only
+        # create what's actually new, e.g. items from a page the earlier
+        # attempt missed.
+        existing = Counter(
+            (t.description, t.amount, t.type)
+            for t in Transaction.objects.filter(source_document=document)
+        )
+
         created = []
         skipped = 0
+        already_existing = 0
         for item in line_items:
+            key = (item.description or document.file_name, item.amount, item.item_type or 'expense')
+            if existing[key] > 0:
+                existing[key] -= 1
+                already_existing += 1
+                item.is_converted = True
+                item.save(update_fields=['is_converted'])
+                continue
+
             property_id = override_property_id
             if not property_id and item.property_name:
                 match = next((p for p in owner_properties if p['name'].strip().lower() == item.property_name.strip().lower()), None)
@@ -248,9 +271,18 @@ class AdminOcrApproveLineItemsView(AdminProtectedView):
                 status='approved', reviewed_at=timezone.now(),
                 notes=f'{len(created)} transaction(s) created from line items' + (f'; {skipped} skipped (no property match)' if skipped else ''),
             )
+            sync_email_status_for_document(document)
 
         log_admin_action(request.user, 'ocr.approve_line_items', request=request, entity_type='document',
-                          entity_id=document.id, new_value={'created': len(created), 'skipped': skipped})
+                          entity_id=document.id, new_value={'created': len(created), 'skipped': skipped,
+                                                            'alreadyExisting': already_existing})
+
+        if created:
+            error = None
+        elif already_existing and not skipped:
+            error = 'All of these line items already exist as transactions — nothing new to create'
+        else:
+            error = 'No line items could be resolved to a property — select a property above and try again'
 
         return Response({
             'success': bool(created),
@@ -259,11 +291,14 @@ class AdminOcrApproveLineItemsView(AdminProtectedView):
                 'transactions': [transaction_row(t) for t in created],
                 'created': len(created),
                 'skipped': skipped,
+                'alreadyExisting': already_existing,
             },
             'message': (
-                f'Created {len(created)} transaction(s)' + (f'; {skipped} line item(s) skipped (no property match)' if skipped else '')
+                f'Created {len(created)} transaction(s)'
+                + (f'; {already_existing} already existed and were not duplicated' if already_existing else '')
+                + (f'; {skipped} line item(s) skipped (no property match)' if skipped else '')
             ) if created else None,
-            'error': None if created else 'No line items could be resolved to a property — select a property above and try again',
+            'error': error,
         }, status=200 if created else 400)
 
 
@@ -295,6 +330,7 @@ class AdminOcrApproveView(AdminProtectedView):
             document=document, ocr_job=latest_job, reviewer=request.user,
             status='approved', reviewed_at=timezone.now(),
         )
+        sync_email_status_for_document(document)
 
         log_admin_action(request.user, 'ocr.approve', request=request, entity_type='document',
                           entity_id=document.id, new_value={'transactionCreated': bool(transaction)})
@@ -329,6 +365,7 @@ class AdminOcrRejectView(AdminProtectedView):
             document=document, ocr_job=latest_job, reviewer=request.user,
             status='rejected', notes=reason, reviewed_at=timezone.now(),
         )
+        sync_email_status_for_document(document)
 
         log_admin_action(request.user, 'ocr.reject', request=request, entity_type='document', entity_id=document.id)
 
@@ -348,6 +385,8 @@ class AdminOcrBulkApproveView(AdminProtectedView):
             Review(document_id=doc_id, reviewer=request.user, status='approved', reviewed_at=timezone.now())
             for doc_id in ids
         ])
+        for document in Document.objects.filter(id__in=ids):
+            sync_email_status_for_document(document)
         log_admin_action(request.user, 'ocr.bulk_approve', request=request, entity_type='document', new_value={'ids': ids})
         return Response({'success': True, 'message': f'{updated} document(s) approved'})
 
@@ -365,6 +404,8 @@ class AdminOcrBulkRejectView(AdminProtectedView):
             Review(document_id=doc_id, reviewer=request.user, status='rejected', reviewed_at=timezone.now())
             for doc_id in ids
         ])
+        for document in Document.objects.filter(id__in=ids):
+            sync_email_status_for_document(document)
         log_admin_action(request.user, 'ocr.bulk_reject', request=request, entity_type='document', new_value={'ids': ids})
         return Response({'success': True, 'message': f'{updated} document(s) rejected'})
 

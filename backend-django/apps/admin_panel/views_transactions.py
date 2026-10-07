@@ -40,7 +40,7 @@ def _source_filter(qs, source):
 class AdminTransactionListView(AdminProtectedView):
     def get(self, request):
         params = request.query_params
-        qs = Transaction.objects.select_related('owner', 'property', 'tenant', 'category')
+        qs = Transaction.objects.select_related('owner', 'property', 'tenant', 'category', 'source_document')
 
         if params.get('userId'):
             qs = qs.filter(owner_id=params['userId'])

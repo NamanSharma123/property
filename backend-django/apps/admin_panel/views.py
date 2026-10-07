@@ -301,7 +301,7 @@ class AdminUserTransactionsView(AdminProtectedView):
         if not User.objects.filter(id=user_id).exists():
             return error_response('User not found', 404)
 
-        qs = Transaction.objects.filter(owner_id=user_id).select_related('property', 'tenant', 'category')
+        qs = Transaction.objects.filter(owner_id=user_id).select_related('property', 'tenant', 'category', 'source_document')
         params = request.query_params
         if params.get('propertyId'):
             qs = qs.filter(property_id=params['propertyId'])

@@ -17,7 +17,7 @@ from apps.properties.models import Property
 from .models import Transaction
 from .serializers import transaction_row
 
-JOIN_EXTRAS = ('property', 'tenant', 'category')
+JOIN_EXTRAS = ('property', 'tenant', 'category', 'source_document')
 
 ALLOWED_UPDATE_FIELDS = [
     'description', 'amount', 'date', 'type', 'category_id', 'category_name',

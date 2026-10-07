@@ -57,6 +57,7 @@ urlpatterns = [
     path('admin/email-inbox/<uuid:message_id>/map', views_email.AdminEmailMapView.as_view()),
     path('admin/email-inbox/<uuid:message_id>/convert', views_email.AdminEmailConvertView.as_view()),
     path('admin/email-inbox/<uuid:message_id>/delete-from-server', views_email.AdminEmailDeleteFromServerView.as_view()),
+    path('admin/email-inbox/cleanup-server', views_email.AdminEmailCleanupServerView.as_view()),
 
     path('admin/support/tickets', views_support.AdminTicketListView.as_view()),
     path('admin/support/tickets/<uuid:ticket_id>', views_support.AdminTicketDetailView.as_view()),

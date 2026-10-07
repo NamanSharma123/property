@@ -1224,6 +1224,11 @@ def extract_transactions_pdf(pdf_file, address_filter=None):
         else:
             found_tx_section = False
             transfers_seen = False
+            # In/Out column centres from the last page that printed its own
+            # header — a continuation page (e.g. page 2 of an Ailo statement)
+            # carries on the same table without repeating "In  Out", so
+            # without these it would find no columns and be skipped whole.
+            carried_cols = None
 
             for page in pdf.pages:
                 words = page.extract_words(keep_blank_chars=False)
@@ -1290,7 +1295,13 @@ def extract_transactions_pdf(pdf_file, address_filter=None):
                         out_x = cx
 
                 if in_x is None or out_x is None:
-                    continue
+                    if start_y == 0 and carried_cols:
+                        in_x, out_x = carried_cols
+                        header_y = -1
+                    else:
+                        continue
+                else:
+                    carried_cols = (in_x, out_x)
 
                 # Format A doesn't have an explicit property column — the
                 # address is printed as its own line above each property's

@@ -81,12 +81,19 @@ interface Transaction {
     type: string;
     date: string;
     category_name?: string;
-    transactionSource?: string;
+    // The API serializes DB columns as-is (snake_case) — reading a camelCase
+    // `transactionSource` here always came back undefined, so every row
+    // (including OCR-created ones) displayed as "Manual Entry".
+    transaction_source?: string;
     created_at?: string;
     // These come straight through from the backend's `SELECT t.*` (see
     // transactionController.js) even though this interface previously didn't
     // name them — the View button surfaces them.
     receipt_url?: string;
+    // The statement this transaction was OCR'd from (sent via the user's
+    // unique email, or uploaded) — shown inline by the View modal.
+    source_document_url?: string;
+    source_document_name?: string;
     unit_label?: string;
     status?: string;
 }
@@ -154,7 +161,7 @@ const TransactionDetailModal = ({
             value: `${transaction.type === 'expense' ? '-' : ''}$${(parseFloat(String(transaction.amount)) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         },
         { label: 'Date', value: new Date(transaction.date).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) },
-        { label: 'Transaction Source', value: transaction.transactionSource || 'Manual Entry' },
+        { label: 'Transaction Source', value: transaction.transaction_source || 'Manual Entry' },
         ...(transaction.unit_label ? [{ label: 'Unit', value: transaction.unit_label }] : []),
         ...(transaction.description ? [{ label: 'Description', value: transaction.description }] : []),
         ...(transaction.created_at
@@ -173,10 +180,27 @@ const TransactionDetailModal = ({
             : []),
     ];
 
+    // A manually attached receipt wins; otherwise the statement this
+    // transaction was OCR'd from (e.g. sent via the user's unique email).
+    const documentUrl = transaction.receipt_url || transaction.source_document_url;
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewError, setPreviewError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!documentUrl) return;
+        let cancelled = false;
+        documentsApi.getViewUrl(documentUrl).then((res) => {
+            if (cancelled) return;
+            if (res.success && res.data?.url) setPreviewUrl(res.data.url);
+            else setPreviewError(res.error || 'Could not load the document.');
+        });
+        return () => { cancelled = true; };
+    }, [documentUrl]);
+
     return (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
             <div
-                className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden"
+                className={`bg-white rounded-xl shadow-xl w-full overflow-hidden max-h-[92vh] flex flex-col ${documentUrl ? 'max-w-6xl' : 'max-w-md'}`}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between px-6 py-4 border-b">
@@ -186,23 +210,44 @@ const TransactionDetailModal = ({
                     </button>
                 </div>
 
-                <div className="px-6 py-4 divide-y divide-gray-100">
-                    {rows.map((row) => (
-                        <div key={row.label} className="flex items-start justify-between gap-4 py-2.5 text-sm">
-                            <span className="text-gray-500">{row.label}</span>
-                            <span className="text-gray-900 font-medium text-right">{row.value}</span>
+                <div className={`overflow-y-auto ${documentUrl ? 'grid grid-cols-1 md:grid-cols-[3fr_2fr]' : ''}`}>
+                    {documentUrl && (
+                        // The browser's native PDF viewer — every page of a
+                        // multi-page statement, same pattern as the admin
+                        // review dialog and the Documents page.
+                        <div className="p-4 bg-gray-50 md:border-r">
+                            {previewUrl ? (
+                                <iframe
+                                    src={previewUrl}
+                                    title={transaction.source_document_name || 'Statement'}
+                                    className="w-full h-[60vh] md:h-[70vh] border border-gray-200 rounded-lg bg-white"
+                                />
+                            ) : (
+                                <div className="h-[60vh] md:h-[70vh] border border-dashed border-gray-200 rounded-lg flex items-center justify-center text-sm text-gray-400">
+                                    {previewError || <Loader2 className="w-5 h-5 animate-spin" />}
+                                </div>
+                            )}
                         </div>
-                    ))}
+                    )}
+
+                    <div className="px-6 py-4 divide-y divide-gray-100">
+                        {rows.map((row) => (
+                            <div key={row.label} className="flex items-start justify-between gap-4 py-2.5 text-sm">
+                                <span className="text-gray-500">{row.label}</span>
+                                <span className="text-gray-900 font-medium text-right">{row.value}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
-                <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between">
-                    {transaction.receipt_url ? (
+                <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between gap-4">
+                    {documentUrl ? (
                         <button
                             type="button"
-                            onClick={() => onViewDocument(transaction.receipt_url!)}
-                            className="text-blue-600 hover:underline text-sm font-medium"
+                            onClick={() => onViewDocument(documentUrl)}
+                            className="text-blue-600 hover:underline text-sm font-medium truncate"
                         >
-                            View Attached Document
+                            Open {transaction.receipt_url ? 'attached document' : (transaction.source_document_name || 'statement')} in new tab ↗
                         </button>
                     ) : (
                         <span className="text-xs text-gray-400">No document attached to this transaction</span>
@@ -809,7 +854,7 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                                         }
                                         if (filters.source) {
                                             filteredTransactions = filteredTransactions.filter(t =>
-                                                (t.transactionSource || 'Manual Entry') === filters.source
+                                                (t.transaction_source || 'Manual Entry') === filters.source
                                             );
                                         }
                                         if (filters.category && filters.category.length > 0) {
@@ -834,7 +879,7 @@ export default function PropertyDashboard({ propertyId }: PropertyDashboardProps
                                                     {getCategoryLabel(transaction.category_name) || transaction.description}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-600">
-                                                    {transaction.transactionSource || 'Manual Entry'}
+                                                    {transaction.transaction_source || 'Manual Entry'}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm">
                                                     <span className={`px-2 py-1 rounded text-xs font-medium ${transaction.type === 'income'
