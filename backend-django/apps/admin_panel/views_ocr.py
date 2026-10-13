@@ -22,7 +22,9 @@ from rest_framework.response import Response
 
 from apps.common.exceptions import error_response
 from apps.common.utils import coerce_date, model_row, to_snake
-from apps.email_inbox.processing import sync_email_status_for_document
+from apps.email_inbox.processing import (
+    DEPRECIATION_DOC_TYPE, file_depreciation_schedule, sync_email_status_for_document,
+)
 from apps.ocr.models import Document, DocumentLineItem, ExtractedData, OCRJob, OcrTemplate, Review
 from apps.properties.models import Property
 from apps.transactions.models import Transaction
@@ -315,7 +317,20 @@ class AdminOcrApproveView(AdminProtectedView):
             return error_response('Document not found', 404)
 
         transaction = None
-        if request.data.get('createTransaction'):
+        schedule = None
+        if document.document_type == DEPRECIATION_DOC_TYPE:
+            # A depreciation schedule is approved into the chosen property's
+            # Depreciation section, not as a transaction.
+            property_id = request.data.get('propertyId') or document.property_id
+            prop = Property.objects.filter(id=property_id, owner_id=document.owner_id).first() if property_id else None
+            if not prop:
+                return error_response('Select the property this depreciation schedule belongs to', 400)
+            schedule, err = file_depreciation_schedule(document, prop)
+            if err:
+                return error_response(err, 400)
+            document.property = prop
+            document.save(update_fields=['property'])
+        elif request.data.get('createTransaction'):
             transaction, err = _create_transaction_from_document(document, request, request.data)
             if err:
                 return error_response(err, 400)
@@ -333,7 +348,8 @@ class AdminOcrApproveView(AdminProtectedView):
         sync_email_status_for_document(document)
 
         log_admin_action(request.user, 'ocr.approve', request=request, entity_type='document',
-                          entity_id=document.id, new_value={'transactionCreated': bool(transaction)})
+                          entity_id=document.id, new_value={'transactionCreated': bool(transaction),
+                                                            'depreciationScheduleId': str(schedule.id) if schedule else None})
 
         return Response({
             'success': True,
@@ -341,7 +357,10 @@ class AdminOcrApproveView(AdminProtectedView):
                 'document': model_row(document),
                 'transaction': transaction_row(transaction) if transaction else None,
             },
-            'message': 'Document approved' + (' and transaction created' if transaction else ''),
+            'message': 'Document approved' + (
+                ' and transaction created' if transaction
+                else " and added to the property's Depreciation section" if schedule else ''
+            ),
         })
 
 

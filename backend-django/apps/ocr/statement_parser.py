@@ -869,57 +869,90 @@ def _extract_account_folio_format(words):
                 break
         return prop
 
-    for w in sorted(words, key=lambda x: x['top']):
-        if w['top'] <= header_y or w['top'] >= stop_y:
-            continue
-        if not _AMOUNT_RE.match(w['text']):
-            continue
-        if w['x0'] < DESC_X_MAX:
-            continue
+    def _rows_between(y_min, y_max, property_for_y, skip_prefixes=()):
+        rows = []
+        for w in sorted(words, key=lambda x: x['top']):
+            if w['top'] <= y_min or w['top'] >= y_max:
+                continue
+            if not _AMOUNT_RE.match(w['text']):
+                continue
+            if w['x0'] < DESC_X_MAX:
+                continue
 
-        val = _parse_amount(w['text'])
-        if not val or float(val) == 0:
-            continue
+            val = _parse_amount(w['text'])
+            if not val or float(val) == 0:
+                continue
 
-        cx = (w['x0'] + w['x1']) / 2
-        col = None
-        if abs(cx - money_out_x) < COL_TOL:
-            col = 'out'
-        elif money_in_x and abs(cx - money_in_x) < COL_TOL:
-            col = 'in'
-        if col is None:
-            continue
+            cx = (w['x0'] + w['x1']) / 2
+            col = None
+            if abs(cx - money_out_x) < COL_TOL:
+                col = 'out'
+            elif money_in_x and abs(cx - money_in_x) < COL_TOL:
+                col = 'in'
+            if col is None:
+                continue
 
-        amt_y = w['top']
+            amt_y = w['top']
 
-        desc_words = sorted(
-            [dw for dw in words
-             if abs(dw['top'] - amt_y) < 3
-             and dw['x1'] < DESC_X_MAX
-             and dw['text'] not in {'*', '+'}
-             and not _AMOUNT_RE.match(dw['text'])],
-            key=lambda dw: dw['x0']
-        )
-        raw_desc = ' '.join(dw['text'] for dw in desc_words).strip()
+            desc_words = sorted(
+                [dw for dw in words
+                 if abs(dw['top'] - amt_y) < 3
+                 and dw['x1'] < DESC_X_MAX
+                 and dw['text'] not in {'*', '+'}
+                 and not _AMOUNT_RE.match(dw['text'])],
+                key=lambda dw: dw['x0']
+            )
+            raw_desc = ' '.join(dw['text'] for dw in desc_words).strip()
 
-        if not raw_desc:
-            continue
+            if not raw_desc:
+                continue
 
-        first_word = raw_desc.split()[0]
-        if first_word in _SKIP_FIRST:
-            continue
+            first_word = raw_desc.split()[0]
+            if first_word in _SKIP_FIRST:
+                continue
+            if raw_desc.lower().startswith(skip_prefixes):
+                continue
 
-        clean = _clean_desc(raw_desc)
-        if not clean or len(clean) < 3:
-            continue
+            clean = _clean_desc(raw_desc)
+            if not clean or len(clean) < 3:
+                continue
 
-        transactions.append({
-            'date': '',
-            'description': clean[:120],
-            'amount_in': val if col == 'in' else '',
-            'amount_out': val if col == 'out' else '',
-            'property_address': _property_for_y(amt_y),
-        })
+            rows.append({
+                'date': '',
+                'description': clean[:120],
+                'amount_in': val if col == 'in' else '',
+                'amount_out': val if col == 'out' else '',
+                'property_address': property_for_y(amt_y),
+            })
+        return rows
+
+    transactions.extend(_rows_between(header_y, stop_y, _property_for_y))
+
+    # "Account Transactions" — account-level lines below the per-property
+    # sections. Real charges/credits live here too (e.g. "NBN Connection
+    # $300" on a Five Rivers folio, counted in the statement's Total Money
+    # Out), but so does the agency paying the balance out to the owner
+    # ("Withdrawal by EFT to owner …"), which is a transfer, not income or
+    # an expense — so payout/balance lines are skipped. The section ends at
+    # its own Total / GST Summary / Balance line.
+    if stop_y != float('inf'):
+        section_end = float('inf')
+        for w in sorted(words, key=lambda x: x['top']):
+            if w['top'] <= stop_y + 2 or w['x0'] >= 80:
+                continue
+            if w['text'] in {'Total', 'GST', 'Balance', 'Page'}:
+                section_end = w['top']
+                break
+        # Account-level items aren't under any property header: attribute
+        # them to the folio's only property when there is exactly one,
+        # otherwise leave it blank so the admin picks one at review time.
+        distinct_props = {addr for _, addr in property_headers}
+        account_prop = next(iter(distinct_props)) if len(distinct_props) == 1 else ''
+        transactions.extend(_rows_between(
+            stop_y + 2, section_end, lambda _y: account_prop,
+            skip_prefixes=('withdrawal', 'eft', 'transfer', 'payment to owner', 'no transactions',
+                           'uncleared', 'balance'),
+        ))
 
     return transactions
 

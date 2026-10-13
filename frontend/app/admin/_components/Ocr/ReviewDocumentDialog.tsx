@@ -39,6 +39,9 @@ export default function ReviewDocumentDialog({
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
 
   const unconvertedLineItems = (doc?.lineItems || []).filter((li) => !li.is_converted);
+  // Emailed with a "Depreciation" subject: approving files it into the
+  // chosen property's Depreciation section, not as transactions.
+  const isDepreciation = doc?.document_type === "depreciation-schedule";
 
   useEffect(() => {
     if (!documentId || !open) return;
@@ -94,6 +97,20 @@ export default function ReviewDocumentDialog({
 
   const approve = async () => {
     if (!documentId) return;
+    if (isDepreciation) {
+      if (!doc?.property_id && !selectedPropertyId) { toast.error("Select the property this depreciation schedule belongs to"); return; }
+      setBusy(true);
+      const res = await adminApi.ocr.approve(documentId, { propertyId: selectedPropertyId || undefined });
+      setBusy(false);
+      if (res.success) {
+        toast.success(res.message || "Depreciation schedule added");
+        onOpenChange(false);
+        onDecided();
+      } else {
+        toast.error(res.error || "Approve failed");
+      }
+      return;
+    }
     if (createTx && !txAmount) { toast.error("Amount is required to create a transaction"); return; }
     if (createTx && !doc?.property_id && !selectedPropertyId) { toast.error("Select a property to create the transaction under"); return; }
 
@@ -255,6 +272,12 @@ export default function ReviewDocumentDialog({
                 </div>
               )}
 
+              {isDepreciation ? (
+                <p className="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500">
+                  Depreciation schedule — Approve adds these years to the selected property&apos;s
+                  Depreciation section (not as transactions).
+                </p>
+              ) : (
               <div className="mt-3 border-t border-gray-100 pt-3">
                 <label className="flex items-center gap-2 text-xs text-gray-600 mb-2">
                   <Checkbox checked={createTx} onCheckedChange={(c) => setCreateTx(!!c)} />
@@ -268,10 +291,11 @@ export default function ReviewDocumentDialog({
                   </div>
                 )}
               </div>
+              )}
 
               <div className="flex gap-2 mt-2">
                 <button disabled={busy} onClick={approve} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
-                  <Check size={14} /> Approve{createTx && " & create"}
+                  <Check size={14} /> {isDepreciation ? "Approve & add to Depreciation" : <>Approve{createTx && " & create"}</>}
                 </button>
                 <button disabled={busy} onClick={reject} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                   <X size={14} /> Reject

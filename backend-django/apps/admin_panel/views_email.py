@@ -19,6 +19,10 @@ from apps.properties.models import Property
 from .base import AdminProtectedView
 from .utils import log_admin_action
 
+# Document.status for a file filed via "Add to Document Vault" — never OCR'd,
+# so kept out of the OCR Review Panel's pending/completed/failed tabs.
+VAULT_STATUS = 'stored'
+
 
 class AdminEmailInboxListView(AdminProtectedView):
     def get(self, request):
@@ -110,13 +114,18 @@ class AdminEmailMapView(AdminProtectedView):
 
 
 class AdminEmailConvertView(AdminProtectedView):
-    """POST /api/admin/email-inbox/<id>/convert — turns a mapped message's
-    attachment(s) into Document row(s), so they enter the normal OCR
-    review flow (Documents list / OCR Review Panel) without running OCR.
-    A manual fallback alongside the automatic pipeline in
+    """POST /api/admin/email-inbox/<id>/convert — "Add to Document Vault":
+    files a mapped message's attachment(s) as Document row(s) WITHOUT
+    running OCR. A manual fallback alongside the automatic pipeline in
     apps.email_inbox.processing (which does this AND runs OCR AND creates
     transactions in one step) — useful when an admin just wants the file
-    filed as a document without touching the automated OCR job."""
+    filed as a document without touching the automated OCR job.
+
+    The documents get status VAULT_STATUS rather than 'pending': with no
+    OCR attempt there's nothing to review, and a 'pending' document showed
+    up in Pending Review as an empty "No extracted fields" entry. To OCR
+    one later, the admin Documents page's reprocess runs OCR and moves it
+    to 'pending' (see run_ocr_extraction), into the normal review flow."""
     allow_support = False
 
     def post(self, request, message_id):
@@ -142,7 +151,7 @@ class AdminEmailConvertView(AdminProtectedView):
                     file_url=att.file_url,
                     file_type=att.content_type or 'application/octet-stream',
                     file_size=att.file_size or 0,
-                    status='pending',
+                    status=VAULT_STATUS,
                 )
                 att.document = document
                 att.save(update_fields=['document'])
@@ -156,7 +165,7 @@ class AdminEmailConvertView(AdminProtectedView):
                 file_url=msg.attachment_url,
                 file_type='application/octet-stream',
                 file_size=0,
-                status='pending',
+                status=VAULT_STATUS,
             )
             documents.append(document)
 

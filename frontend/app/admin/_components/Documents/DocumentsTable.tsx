@@ -19,6 +19,7 @@ const statusTone: Record<string, string> = {
   completed: "bg-green-50 text-green-700 border-green-200",
   pending: "bg-amber-50 text-amber-600 border-amber-200",
   failed: "bg-red-50 text-red-600 border-red-200",
+  stored: "bg-blue-50 text-blue-600 border-blue-200",
 };
 
 export default function DocumentsTable({ isFullAdmin }: { isFullAdmin: boolean }) {
@@ -100,6 +101,7 @@ export default function DocumentsTable({ isFullAdmin }: { isFullAdmin: boolean }
             <SelectItem value="pending">Pending</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>
+            <SelectItem value="stored">Stored (vault, not OCR&apos;d)</SelectItem>
           </SelectContent>
         </Select>
         <UserFilterSelect value={userId} onChange={setUserId} />

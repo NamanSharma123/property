@@ -14,7 +14,7 @@ from apps.common.exceptions import error_response
 from apps.common.views import ProtectedView
 from apps.properties.models import Property
 
-from . import schedule_parser
+from . import schedule_parser, service
 from .models import DepreciationSchedule, DepreciationScheduleYear
 from .serializers import schedule_row
 
@@ -78,63 +78,18 @@ class DepreciationUploadView(ProtectedView):
         # Sanity-check the report's own stated address against the selected
         # property before storing anything — otherwise any PDF uploaded while
         # property X is selected silently gets filed under X regardless of
-        # whose report it actually is. Only rejects on a confident mismatch
-        # (both sides parsed to an address and they disagree); an
-        # unrecognised address on either side doesn't block the upload.
-        if parsed and parsed['address']:
-            street = (prop.address or {}).get('street', '') if isinstance(prop.address, dict) else ''
-            prop_signature = (
-                schedule_parser.address_signature(street)
-                or schedule_parser.address_signature(prop.full_address or '')
-            )
-            if prop_signature and parsed['address'][:2] != prop_signature[:2]:
-                return error_response(
-                    f"This report is for \"{parsed['address'][2]}\", not the selected property "
-                    f"\"{prop.name}\". Select the matching property and try again.",
-                    400,
-                )
+        # whose report it actually is.
+        mismatch = service.address_mismatch(parsed, prop)
+        if mismatch:
+            return error_response(mismatch, 400)
 
         url, err = _upload_to_s3(uploaded, request.user.id)
         if err:
             return err
 
-        has_rows = bool(parsed and (parsed['diminishing_value'] or parsed['prime_cost']))
-
-        schedule = DepreciationSchedule.objects.create(
-            owner_id=request.user.id,
-            property=prop,
-            file_name=uploaded.name,
-            file_url=url,
-            file_size=uploaded.size,
-            provider=parsed['provider'] if parsed else None,
-            status='parsed' if has_rows else 'failed',
-            error_message=None if has_rows else (
-                parse_error or 'Could not find a recognised depreciation schedule table in this PDF.'
-            ),
+        schedule, years = service.create_schedule(
+            request.user.id, prop, uploaded.name, url, uploaded.size, parsed, parse_error,
         )
-
-        years = []
-        if parsed:
-            for method, rows in (
-                ('diminishing_value', parsed['diminishing_value']),
-                ('prime_cost', parsed['prime_cost']),
-            ):
-                for order, row in enumerate(rows):
-                    years.append(DepreciationScheduleYear(
-                        schedule=schedule,
-                        method=method,
-                        financial_date=row['financial_date'],
-                        division_40_amount=row['division_40_amount'],
-                        division_43_amount=row['division_43_amount'],
-                        total_amount=row['total_amount'],
-                        sort_order=order,
-                    ))
-        if years:
-            DepreciationScheduleYear.objects.bulk_create(years)
-
-        if has_rows:
-            prop.has_depreciation = True
-            prop.save()
 
         return Response({
             'success': True,

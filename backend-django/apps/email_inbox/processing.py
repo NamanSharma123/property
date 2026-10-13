@@ -165,6 +165,109 @@ def _resolve_property(owner_id, fixed_property_id, property_name):
     return None
 
 
+DEPRECIATION_DOC_TYPE = 'depreciation-schedule'
+
+
+def _finish_depreciation_extraction(document, job, data, text):
+    """The depreciation-schedule branch of run_ocr_extraction: runs
+    apps.depreciation's schedule parser (the same one the property page's
+    upload uses) and records each financial year as an ExtractedData row,
+    so the admin review dialog shows the years/amounts it found. Creates no
+    line items. The parsed result is attached to the job as
+    `depreciation_parsed` for the caller to file without re-parsing."""
+    from apps.depreciation import schedule_parser, service as depreciation_service
+
+    try:
+        parsed = schedule_parser.extract_depreciation_schedule(BytesIO(data))
+    except Exception as exc:
+        logger.warning('Depreciation parse failed for document %s: %s', document.id, exc)
+        parsed = None
+
+    found = depreciation_service.has_rows(parsed)
+    confidence = 90 if found else 30
+    if parsed and parsed['provider']:
+        ExtractedData.objects.create(
+            document=document, ocr_job=job, field_name='Depreciation provider',
+            field_value=parsed['provider'], confidence=confidence,
+        )
+    if parsed and parsed['address']:
+        ExtractedData.objects.create(
+            document=document, ocr_job=job, field_name='Report property address',
+            field_value=parsed['address'][2], confidence=confidence,
+        )
+    for method, label in (('diminishing_value', 'Diminishing value'), ('prime_cost', 'Prime cost')):
+        for row in (parsed or {}).get(method, []):
+            ExtractedData.objects.create(
+                document=document, ocr_job=job,
+                field_name=f'{label}: year ending {row["financial_date"]}'[:100],
+                field_value=(
+                    f'${row["total_amount"]:,.2f} (Div 40 ${row["division_40_amount"]:,.2f}'
+                    f' + Div 43 ${row["division_43_amount"]:,.2f})'
+                ),
+                confidence=confidence, data_type='currency',
+            )
+
+    job.provider = 'depreciation-schedule-parser'
+    job.raw_text = (text or '')[:20000]
+    job.confidence = confidence
+    job.status = 'completed'
+    job.completed_at = timezone.now()
+    if not found:
+        job.error_message = 'No recognised depreciation schedule table found in this PDF.'
+    job.save(update_fields=['provider', 'raw_text', 'confidence', 'status', 'completed_at', 'error_message'])
+
+    document.ocr_raw_text = job.raw_text
+    document.ocr_confidence = confidence
+    document.processing_completed_at = timezone.now()
+    document.save(update_fields=['ocr_raw_text', 'ocr_confidence', 'processing_completed_at'])
+
+    job.depreciation_parsed = parsed
+    return job
+
+
+def file_depreciation_schedule(document, prop, parsed=None):
+    """Files `document` (an emailed depreciation schedule) under `prop`'s
+    Depreciation section. Parses the file if `parsed` isn't given. Returns
+    (schedule, error) — error is a message when nothing was filed: no
+    rows found, an address mismatch, or this exact file already filed for
+    that property (no duplicates, point 2 of 04/10/2026)."""
+    from apps.depreciation import schedule_parser, service as depreciation_service
+    from apps.depreciation.models import DepreciationSchedule
+
+    if DepreciationSchedule.objects.filter(property=prop, file_url=document.file_url).exists():
+        return None, 'This depreciation schedule is already added to that property.'
+    if parsed is None:
+        try:
+            parsed = schedule_parser.extract_depreciation_schedule(BytesIO(_fetch_attachment_bytes(document.file_url)))
+        except Exception as exc:
+            return None, f'Could not read the depreciation schedule: {exc}'
+    if not depreciation_service.has_rows(parsed):
+        return None, 'No recognised depreciation schedule table was found in this PDF.'
+    mismatch = depreciation_service.address_mismatch(parsed, prop, include_name=True)
+    if mismatch:
+        return None, mismatch
+
+    schedule, _years = depreciation_service.create_schedule(
+        document.owner_id, prop, document.file_name, document.file_url, document.file_size, parsed,
+    )
+    return schedule, None
+
+
+def _depreciation_property(msg, parsed):
+    """Which property an emailed depreciation schedule belongs to: the one
+    the email was mapped to, else the user's property whose address matches
+    the report's, else the user's only property. None when ambiguous."""
+    from apps.depreciation import service as depreciation_service
+
+    if msg.property_id:
+        return Property.objects.filter(id=msg.property_id, owner_id=msg.user_id).first()
+    properties = list(Property.objects.filter(owner_id=msg.user_id))
+    matched = depreciation_service.match_property(properties, parsed)
+    if matched:
+        return matched
+    return properties[0] if len(properties) == 1 else None
+
+
 def run_ocr_extraction(document, triggered_by=None, config=None):
     """Runs one OCR attempt against `document`'s file. Always creates a new
     OCRJob (attempt_number auto-incremented) with this attempt's raw text/
@@ -202,6 +305,12 @@ def run_ocr_extraction(document, triggered_by=None, config=None):
             if not text or len(text.strip()) < 10:
                 text, _pages = _extract_pdf_text_via_ocr(data)
                 provider = 'pdf-ocr'
+            if document.document_type == DEPRECIATION_DOC_TYPE:
+                # "Based on subject, relevant OCR will run": a depreciation
+                # schedule is a per-financial-year table, not a list of
+                # transactions — it gets its own parser and ends up in the
+                # property's Depreciation section, never as line items.
+                return _finish_depreciation_extraction(document, job, data, text)
             try:
                 transactions, period, prop_addr = statement_parser.extract_transactions_pdf(BytesIO(data))
                 if transactions:
@@ -413,6 +522,8 @@ def process_email_message(msg):
     total_awaiting_template = 0
     total_duplicates = 0
     total_decided = 0
+    total_depreciation_filed = 0
+    depreciation_review_reasons = []
     any_failed = False
     confidences = []
 
@@ -486,6 +597,31 @@ def process_email_message(msg):
             continue
 
         confidences.append(job.confidence or 0)
+
+        if document.document_type == DEPRECIATION_DOC_TYPE:
+            # Filed straight into the property's Depreciation section when
+            # the template is approved and the property is known — otherwise
+            # Pending Review, where Approve files it under the chosen property.
+            reason = None
+            if not template_approved:
+                reason = f'"{doc_type}" has no approved OCR template yet'
+            else:
+                prop = _depreciation_property(msg, getattr(job, 'depreciation_parsed', None))
+                if not prop:
+                    reason = 'could not tell which property it belongs to'
+                else:
+                    schedule, reason = file_depreciation_schedule(
+                        document, prop, getattr(job, 'depreciation_parsed', None),
+                    )
+                    if schedule:
+                        document.property = prop
+                        document.status = 'completed'
+                        document.save(update_fields=['property', 'status'])
+                        total_depreciation_filed += 1
+                        continue
+            depreciation_review_reasons.append(reason)
+            continue
+
         named_items = [
             (li.property_name, li) for li in DocumentLineItem.objects.filter(document=document, ocr_job=job)
         ]
@@ -553,6 +689,16 @@ def process_email_message(msg):
         # rejected; just reflect that decision on the email.
         msg.status = email_status_from_documents(msg) or 'needs_review'
         summary = 'All attachment(s) were already reviewed — nothing to re-OCR.'
+    elif (total_depreciation_filed or depreciation_review_reasons) and not total_extracted:
+        msg.status = 'needs_review' if (depreciation_review_reasons or any_failed) else 'processed'
+        parts = []
+        if total_depreciation_filed:
+            parts.append(f"Added {total_depreciation_filed} depreciation schedule(s) to the property's Depreciation section.")
+        if depreciation_review_reasons:
+            parts.append('Depreciation schedule needs admin review — ' + '; '.join(dict.fromkeys(depreciation_review_reasons)) + '.')
+        if any_failed:
+            parts.append('Some attachments failed OCR.')
+        summary = ' '.join(parts)
     elif any_failed and not total_created:
         msg.status = 'failed'
         summary = 'OCR failed on all attachment(s) — see the document(s) for the error.'

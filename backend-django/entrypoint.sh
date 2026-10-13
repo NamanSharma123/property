@@ -19,4 +19,11 @@ python manage.py backfill_mailboxes
 # already on the current domain.
 python manage.py migrate_stale_inbound_emails
 
+# "OCR runs in background": hourly sweep over new inbound emails. There's no
+# Celery worker/beat in production, so it runs as a background process in
+# this container (see apps/email_inbox/management/commands/
+# run_email_ocr_scheduler.py). Its failures are logged, never fatal to
+# gunicorn; EMAIL_OCR_INTERVAL_SECONDS=0 turns it off.
+python -u manage.py run_email_ocr_scheduler &
+
 exec gunicorn config.wsgi:application --bind 0.0.0.0:5000 --workers 4 --timeout 60
