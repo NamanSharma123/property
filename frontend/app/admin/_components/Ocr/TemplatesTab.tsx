@@ -36,16 +36,15 @@ export default function TemplatesTab({ isFullAdmin }: { isFullAdmin: boolean }) 
   return (
     <div>
       <p className="text-xs text-gray-400 mb-3">
-        Extraction itself runs client-side and isn&apos;t driven by these records yet — this is the
-        admin-facing registry of recognized document types (enable/disable, confidence threshold, version).
+        <b>Enabled</b> = approved: emailed statements of this type skip Pending Review and create
+        transactions directly in the user&apos;s property. <b>Disabled</b> = every statement of this type
+        goes to Pending Review for an admin to approve or reject.
       </p>
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Template</TableHead>
             <TableHead>Document type</TableHead>
-            <TableHead className="text-right">Confidence threshold</TableHead>
-            <TableHead>Version</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -57,8 +56,6 @@ export default function TemplatesTab({ isFullAdmin }: { isFullAdmin: boolean }) 
                 {t.description && <div className="text-xs text-gray-400">{t.description}</div>}
               </TableCell>
               <TableCell className="text-sm text-gray-500 font-mono text-xs">{t.document_type}</TableCell>
-              <TableCell className="text-right text-sm tabular-nums">{t.confidence_threshold}%</TableCell>
-              <TableCell className="text-sm text-gray-500">v{t.version}</TableCell>
               <TableCell>
                 {isFullAdmin ? (
                   <div className="flex items-center gap-2">
