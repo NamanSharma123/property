@@ -1,0 +1,66 @@
+name: Build and deploy container
+on:
+  workflow_call:
+    inputs:
+      service:
+        required: true
+        type: string
+      context:
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: production-${{ inputs.service }}
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - name: Build and push commit image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SERVICE: ${{ inputs.service }}
+          CONTEXT: ${{ inputs.context }}
+          API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+        run: |
+          set -euo pipefail
+          IMAGE="$REGISTRY/properly-$SERVICE:$GITHUB_SHA"
+          docker build --build-arg NEXT_PUBLIC_API_URL="$API_URL" -t "$IMAGE" "$CONTEXT"
+          docker push "$IMAGE"
+      - name: Configure verified SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY" && test -n "$EC2_HOST"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          cp .github/ec2_known_hosts ~/.ssh/known_hosts
+      - name: Deploy with health check and rollback
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          set -euo pipefail
+          SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key)
+          REMOTE="/tmp/properly-deploy-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$SERVICE.sh"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key ops/deploy-container.sh "ubuntu@$EC2_HOST:$REMOTE"
+          aws ecr get-login-password --region "$AWS_REGION" | "${SSH[@]}" "ubuntu@$EC2_HOST" "sudo docker login --username AWS --password-stdin '$REGISTRY'"
+          "${SSH[@]}" "ubuntu@$EC2_HOST" "sudo bash '$REMOTE' '$SERVICE' '$REGISTRY/properly-$SERVICE:$GITHUB_SHA'"
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

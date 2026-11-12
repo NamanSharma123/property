@@ -87,7 +87,7 @@ export function useTransactions() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to create transaction' };
     }
   };
@@ -100,7 +100,7 @@ export function useTransactions() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to update transaction' };
     }
   };
@@ -113,7 +113,7 @@ export function useTransactions() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to delete transaction' };
     }
   };
@@ -125,7 +125,7 @@ export function useTransactions() {
         return { success: true, stats: response.data as TransactionStats };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to fetch stats' };
     }
   };

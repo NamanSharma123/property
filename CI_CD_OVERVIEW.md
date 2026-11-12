@@ -1,115 +1,83 @@
-# From VS Code to Production on AWS — how this project actually deploys
+# Production CI/CD
 
-This is the walkthrough of everything that happens between you
-writing code in VS Code and a real user opening the app in their browser.
-For the original one-time setup steps, see [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md).
+Production runs on one Sydney EC2 instance (`ap-southeast-2`), behind Nginx.
+App Runner is no longer used.
 
-## The whole journey, in one picture
+| Application | URL | Runtime |
+| --- | --- | --- |
+| Property frontend | https://investview.com.au | Docker, localhost:3000 |
+| Django API/admin | https://api.investview.com.au | Docker, localhost:5000 |
+| OZFIRSTCHOICE | https://ozfirstchoice.com.au | Nginx static files |
 
+## On pull requests
+
+Frontend lint and TypeScript checks, Django system checks, static link checks,
+and isolated deployment/rollback tests run for the relevant changed paths.
+Pull requests never authenticate to AWS or deploy production.
+
+## On pushes to main
+
+- `frontend-deploy.yml` checks the frontend, builds a Docker image on GitHub's
+  runner, pushes its commit SHA tag to ECR, then deploys just the frontend.
+- `backend-deploy.yml` checks Django and deploys its commit SHA image similarly.
+- `web-deploy.yml` checks static sites and deploys **only `web/`** to OZFIRSTCHOICE.
+  `Shelly_CRM/` is committed and link-checked, but has no production domain/deploy.
+- `container-deploy.yml` is the shared container build/deploy implementation.
+- Each entry workflow also supports manual **Run workflow** from GitHub Actions.
+
+Container builds happen off-server to keep the 2 GiB EC2 instance responsive.
+Images are deployed by SHA rather than the mutable `latest` tag. SSH host keys
+are pinned in `.github/ec2_known_hosts`. Confirm new host fingerprints through
+an already-trusted connection before updating this file after replacing EC2.
+
+Deployments are queued by application and use a shared server-side `flock` so
+Compose/static changes cannot race. GitHub concurrency retains at most one
+pending run per application; a newer pending run may replace an older pending run.
+
+## Health and rollback
+
+`ops/deploy-container.sh` saves the running image under a local rollback tag,
+pulls the new commit image, and recreates only that service. It retries local
+health checks (about three minutes plus request timeouts), then checks public
+HTTPS. Failures restore the previous image and fail the workflow. A restart
+can briefly interrupt that application's requests; this is not a blue/green setup.
+
+The image selection is saved in `/opt/properly/docker-compose.<service>.release.yml`.
+For manual service operations, include that override:
+
+```sh
+cd /opt/properly
+sudo docker compose -f docker-compose.yml -f docker-compose.frontend.release.yml up -d --no-deps frontend
+# Substitute backend for frontend when operating on the API.
 ```
- 1. You write code in VS Code
-         │
- 2. git push origin main
-         │
- 3. GitHub Actions wakes up (.github/workflows/*.yml)
-         │
-         ├─ Runs quick checks (Django `manage.py check`, frontend lint + type-check)
-         │
-         ├─ Builds a Docker image (backend-django/Dockerfile or frontend/Dockerfile)
-         │
-         ├─ Pushes that image to Amazon ECR (your account's private image storage)
-         │
-         └─ Tells AWS App Runner "redeploy from the new image"
-                 │
- 4. AWS App Runner pulls the new image and starts it
-         │
- 5. Your app is live at its https://...awsapprunner.com URL
+
+Do not use a plain `docker compose up` after CI deployment: the original base
+file still references `latest`. The override records the selected SHA/rollback image.
+
+Backend startup applies database migrations. Container rollback does **not**
+reverse database migrations; production migrations must remain backward compatible.
+
+`ops/deploy-static.sh` stages a release, switches the Nginx document-root
+symlink, checks HTTP/HTTPS and restores the old symlink on failure. It retains
+the current and previous release. Existing manual deployment is converted to
+a bootstrap release on the first run. Nginx configuration and certificates
+are not replaced by CI.
+
+## Verification
+
+```sh
+python ops/check-static.py web Shelly_CRM
+python ops/test_deploy.py  # Linux; uses fake Docker/curl in temporary directories
+bash -n ops/deploy-container.sh
+bash -n ops/deploy-static.sh
 ```
 
-Steps 3-4 take a few minutes and need zero manual action from you — that's
-the entire point of CI/CD ("Continuous Integration / Continuous Deployment"):
-push code, everything else happens on its own.
+Run `npm ci`, `npm run lint`, `npm run type-check`, and `npm run build` in
+`frontend/`. Run `python manage.py check` with development settings in
+`backend-django/` after installing `requirements/dev.txt`.
 
-## What's live right now
+## Outstanding product setup
 
-| | URL |
-|---|---|
-| **Frontend** (what users open) | https://5yy6ei9nup.ap-southeast-2.awsapprunner.com |
-| **Backend API** (what the frontend talks to) | https://jsamju3nmy.ap-southeast-2.awsapprunner.com |
-
-Both are real, running servers in AWS's Sydney region (`ap-southeast-2`),
-connected to your Neon Postgres database.
-
-## The AWS services involved, and what each one actually does
-
-| Service | Plain-English job | Named resource |
-|---|---|---|
-| **ECR** (Elastic Container Registry) | A private warehouse for your Docker images. GitHub Actions drops a new image here every time you push code. | `properly-backend`, `properly-frontend` repos |
-| **App Runner** | Actually runs your app 24/7. Pulls the image from ECR, starts it, gives it a public HTTPS address, restarts it if it crashes, and can scale it up if traffic grows. This is the "server" — but AWS manages the actual machine underneath, not you. | `properly-backend`, `properly-frontend` services |
-| **Secrets Manager** | A locked box for sensitive values — your database connection string and security keys. App Runner reads from here at startup instead of those values being hardcoded anywhere. | `properly/database-url`, `properly/jwt-secret`, `properly/django-secret-key` |
-| **IAM** (Identity and Access Management) | Controls who/what is allowed to do what in your AWS account. This is what lets GitHub Actions log in and deploy without you ever typing an AWS password into GitHub. | Role: `github-actions-properly-deploy` |
-| **Neon** (not AWS) | Your actual Postgres database — separate from AWS, already set up before this deployment work, left as-is. | — |
-
-## What happens on every `git push`
-
-Concretely, step by step, once you push to `main`:
-
-1. **GitHub notices** the push touched either `backend-django/` or `frontend/` (or both) and starts the matching workflow(s) in `.github/workflows/`.
-2. **Quick sanity check** runs first — for the backend, `python manage.py check`; for the frontend, lint + TypeScript type-check. If these fail, the pipeline stops here and nothing gets deployed — this is your safety net against pushing broken code to production.
-3. **Docker build** — the exact same `Dockerfile` you can run on your own machine builds a fresh image with your latest code.
-4. **Push to ECR** — the new image is uploaded, tagged both with `latest` and with the specific commit hash (so you can always trace which code is running).
-5. **Deploy trigger** — GitHub Actions tells App Runner "there's a new image, redeploy." App Runner pulls it, health-checks it, and only switches traffic over once the new version is confirmed healthy — so a bad deploy doesn't take the site down, it just fails to roll out and the old version keeps serving traffic.
-
-You can watch all of this happen live: GitHub repo → **Actions** tab → click the running workflow.
-
-## Attach `investview.com.au`
-
-The app is already deployed at the App Runner URLs above. Map the website,
-API, and Django admin to separate hostnames:
-
-| Purpose | Hostname | App Runner service |
-|---|---|---|
-| Website | `investview.com.au` (and optionally `www.investview.com.au`) | `properly-frontend` |
-| API and Django admin | `api.investview.com.au` (`/api/...` and `/admin/`) | `properly-backend` |
-
-In AWS Console, open each App Runner service → **Custom domains** → **Link
-domain**. Link the website hostname(s) to the frontend service and
-`api.investview.com.au` to the backend service. For every hostname, App Runner
-shows the required DNS target and certificate validation records. Copy those
-records exactly into the DNS zone at your domain registrar, then wait until
-App Runner reports the domain as **Active**. Keep existing MX/TXT records used
-for email; only add or change the records App Runner specifies. Do not guess
-the CNAME/validation targets.
-
-After the API hostname is active:
-
-1. In GitHub repository **Settings → Secrets and variables → Actions → Variables**,
-   set `NEXT_PUBLIC_API_URL` to `https://api.investview.com.au`.
-2. Set the App Runner backend service `ALLOWED_HOSTS` environment variable to
-   `api.investview.com.au` and `CORS_ALLOWED_ORIGINS` to
-   `https://investview.com.au,https://www.investview.com.au` (include `www`
-   only if you linked it).
-3. Deploy the frontend workflow so its browser bundle uses the new API URL.
-   Restart/redeploy the backend after changing its environment variables.
-4. Check `https://investview.com.au`, sign in, check an API-backed page, and
-   open `https://api.investview.com.au/admin/` to confirm the Django admin
-   login page loads. The frontend app's own admin screens remain under the
-   website; Django's built-in admin is served by the backend at `/admin/`.
-
-The API hostname is used by browser JavaScript, so it needs a trusted HTTPS
-certificate too. The app code now defaults CORS to the website domains and
-lets you override the list with `CORS_ALLOWED_ORIGINS`.
-
-## Things worth doing before this handles real users' data
-
-(Carried over from `AWS_DEPLOYMENT.md`, restated here since this is the
-"current state" document — not urgent, but real gaps):
-
-- **CORS is wide open** (`backend-django/config/settings/base.py` allows any
-  website to call the API). Fine for now, should be locked to just your
-  frontend's domain before going fully public.
-- **No billing alert set up yet** — cheap at this scale, but worth a
-  CloudWatch billing alarm so nothing surprises you.
-- **The IAM user used to bootstrap all this has full admin access** —
-  reasonable for initial setup, worth scoping down or rotating the access
-  key periodically going forward.
+OZFIRSTCHOICE's contact form still requires a Web3Forms access key; otherwise
+visitors are directed to call/email. Review `web/README.md` for the business
+content checklist. CI does not manufacture contact keys or business details.

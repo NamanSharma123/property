@@ -104,7 +104,7 @@ export function useProperties() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to create property' };
     }
   };
@@ -117,7 +117,7 @@ export function useProperties() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to update property' };
     }
   };
@@ -130,7 +130,7 @@ export function useProperties() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to delete property' };
     }
   };
@@ -142,7 +142,7 @@ export function useProperties() {
         return { success: true, property: (response.data as { property: Property }).property };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to fetch property' };
     }
   };

@@ -1,0 +1,4 @@
+# Local tooling and generated caches
+__pycache__/
+*.py[cod]
+.DS_Store

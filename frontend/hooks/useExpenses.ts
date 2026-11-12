@@ -91,7 +91,7 @@ export function useExpenses() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to create expense' };
     }
   };
@@ -104,7 +104,7 @@ export function useExpenses() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to update expense' };
     }
   };
@@ -117,7 +117,7 @@ export function useExpenses() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to delete expense' };
     }
   };
@@ -129,7 +129,7 @@ export function useExpenses() {
         return { success: true, stats: (response.data as { stats: ExpenseStats }).stats };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to fetch stats' };
     }
   };

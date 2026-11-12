@@ -4,3 +4,6 @@ node_modules/
 .gitignore
 README.md
 npm-debug.log*
+
+# Runtime secrets must never enter Docker build layers.
+.env*

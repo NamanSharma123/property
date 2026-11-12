@@ -10,7 +10,7 @@ export function useTransactionsSWR(propertyId?: string) {
         async () => {
             const response = await transactionsApi.getAll(propertyId ? { propertyId, limit: 100 } : { limit: 100 });
             if (response.success && response.data) {
-                const data = response.data as { transactions: any[] };
+                const data = response.data as { transactions: Record<string, unknown>[] };
                 return (data.transactions || []).map(t => {
                     // Format property type: capitalize first letter or use sub_type if available
                     const mainType = (t.property_type as string) || '';

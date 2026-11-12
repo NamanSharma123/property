@@ -84,7 +84,7 @@ export function useTenants() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to create tenant' };
     }
   };
@@ -97,7 +97,7 @@ export function useTenants() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to update tenant' };
     }
   };
@@ -110,7 +110,7 @@ export function useTenants() {
         return { success: true };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to delete tenant' };
     }
   };
@@ -122,7 +122,7 @@ export function useTenants() {
         return { success: true, tenant: (response.data as { tenant: Tenant }).tenant };
       }
       return { success: false, error: response.error };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Failed to fetch tenant' };
     }
   };

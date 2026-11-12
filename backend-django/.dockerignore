@@ -10,3 +10,6 @@ apps/ocr/test_fixtures/
 .git/
 .gitignore
 README.md
+
+# Runtime secrets must never enter Docker build layers.
+.env*

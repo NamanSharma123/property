@@ -68,8 +68,8 @@ Frontend details (structure, env vars, known rough edges):
 
 ## Production deployment (AWS)
 
-This app is live in production on AWS via automatic CI/CD — push to `main`
-and it deploys itself. See [CI_CD_OVERVIEW.md](CI_CD_OVERVIEW.md) for the
-plain-English walkthrough (what's live, current URLs, how a push turns into
-a deployment, custom domain steps), or [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md)
-for the original one-time AWS setup instructions.
+Production runs on a shared Sydney EC2 server: Docker for the frontend/API,
+Nginx for HTTPS and the static OZFIRSTCHOICE site in `web/`. Pushes to `main`
+deploy the relevant application after checks pass. See
+[CI_CD_OVERVIEW.md](CI_CD_OVERVIEW.md) for triggers, health checks and rollback,
+and [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md) for required repository settings.

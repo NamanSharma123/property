@@ -1,0 +1,60 @@
+name: OZFIRSTCHOICE CI/CD
+on:
+  pull_request:
+    branches: [main]
+    paths: ['web/**', 'Shelly_CRM/**', 'ops/**', '.github/workflows/web-deploy.yml', '.github/ec2_known_hosts']
+  push:
+    branches: [main]
+    paths: ['web/**', 'Shelly_CRM/**', 'ops/**', '.github/workflows/web-deploy.yml', '.github/ec2_known_hosts']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: production-ozfirstchoice
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python ops/check-static.py web Shelly_CRM
+      - run: python ops/test_deploy.py
+      - run: bash -n ops/deploy-container.sh && bash -n ops/deploy-static.sh
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure verified SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY" && test -n "$EC2_HOST"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          cp .github/ec2_known_hosts ~/.ssh/known_hosts
+      - name: Package and deploy static release
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          RELEASE="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          ARCHIVE="/tmp/ozfirstchoice-$RELEASE.tar.gz"
+          SCRIPT="/tmp/ozfirstchoice-$RELEASE.sh"
+          tar --exclude='*.md' --exclude=new_file.txt -czf site.tar.gz -C web .
+          SCP=(scp -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key)
+          "${SCP[@]}" site.tar.gz "ubuntu@$EC2_HOST:$ARCHIVE"
+          "${SCP[@]}" ops/deploy-static.sh "ubuntu@$EC2_HOST:$SCRIPT"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key "ubuntu@$EC2_HOST" "sudo bash '$SCRIPT' '$ARCHIVE' '$RELEASE'"
+      - name: Remove runner SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

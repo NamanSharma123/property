@@ -1,7 +1,7 @@
 'use client';
 
 import useSWR from 'swr';
-import { notificationsApi, Notification } from '@/lib/api';
+import { notificationsApi } from '@/lib/api';
 
 export function useNotificationsSWR() {
     const { data, error, isLoading, mutate } = useSWR(

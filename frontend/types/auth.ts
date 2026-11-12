@@ -150,8 +150,8 @@ export interface ActivityLog {
   deviceInfo: DeviceInfo
   ipAddress: string
   success: boolean
-  details?: Record<string, any>
-  metadata?: any
+  details?: Record<string, unknown>
+  metadata?: unknown
   userAgent?: string
 }
 

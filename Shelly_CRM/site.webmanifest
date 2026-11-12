@@ -1,0 +1,9 @@
+{
+  "name": "OZFIRSTCHOICE",
+  "short_name": "OZFIRSTCHOICE",
+  "icons": [],
+  "theme_color": "#0B1F3A",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "start_url": "/"
+}

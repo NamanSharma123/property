@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b2447"/>
+      <stop offset="1" stop-color="#050f1f"/>
+    </linearGradient>
+    <radialGradient id="bglow" cx=".82" cy=".2" r=".55">
+      <stop offset="0" stop-color="#12346a" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#12346a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="600" fill="url(#bbg)"/>
+  <rect width="1200" height="600" fill="url(#bglow)"/>
+  <g font-family="Consolas, 'Courier New', monospace" font-size="46" letter-spacing="8" fill="#2a507e">
+    <text x="30" y="80" opacity=".55">0100010101100101</text>
+    <text x="30" y="150" opacity=".7">0111101010100101</text>
+    <text x="30" y="220" opacity=".45">1010010111010010</text>
+    <text x="30" y="290" opacity=".65">0110100101100101</text>
+    <text x="30" y="360" opacity=".4">0111000000110101</text>
+    <text x="30" y="430" opacity=".6">0101010111001011</text>
+    <text x="30" y="500" opacity=".45">0110010110100110</text>
+    <text x="30" y="570" opacity=".6">0101101001011100</text>
+    <text x="640" y="115" opacity=".35">01001010101010</text>
+    <text x="640" y="255" opacity=".5">01101101001101</text>
+    <text x="640" y="395" opacity=".35">01010010110101</text>
+    <text x="640" y="535" opacity=".5">01101001010110</text>
+  </g>
+  <g stroke="#3d6a99" stroke-width="2" opacity=".5">
+    <path d="M0 120 H380 V300 H700" fill="none"/>
+    <path d="M1200 420 H860 V250 H560" fill="none"/>
+    <path d="M0 470 H260 V560 H520" fill="none"/>
+  </g>
+  <g fill="#5b8cc0" opacity=".8">
+    <circle cx="380" cy="300" r="7"/>
+    <circle cx="700" cy="300" r="5"/>
+    <circle cx="860" cy="420" r="7"/>
+    <circle cx="560" cy="250" r="5"/>
+    <circle cx="260" cy="470" r="6"/>
+  </g>
+  <circle cx="985" cy="140" r="46" fill="none" stroke="#3d6a99" stroke-width="2" opacity=".45"/>
+  <circle cx="985" cy="140" r="30" fill="none" stroke="#3d6a99" stroke-width="1.5" opacity=".35"/>
+  <circle cx="180" cy="480" r="10" fill="#f97316" opacity=".9"/>
+  <circle cx="180" cy="480" r="20" fill="none" stroke="#f97316" stroke-width="2" opacity=".4"/>
+  <g opacity=".55">
+    <circle cx="860" cy="300" r="150" fill="none" stroke="#4a76a8" stroke-width="2"/>
+    <ellipse cx="860" cy="300" rx="150" ry="58" fill="none" stroke="#4a76a8" stroke-width="1.5"/>
+    <ellipse cx="860" cy="300" rx="150" ry="108" fill="none" stroke="#4a76a8" stroke-width="1.5"/>
+    <ellipse cx="860" cy="300" rx="58" ry="150" fill="none" stroke="#4a76a8" stroke-width="1.5"/>
+    <ellipse cx="860" cy="300" rx="108" ry="150" fill="none" stroke="#4a76a8" stroke-width="1.5"/>
+    <g stroke="#5b8cc0" stroke-width="1.5">
+      <path d="M860 300 L915 252 L975 285 L1010 300" fill="none"/>
+      <path d="M860 300 L805 258 L745 330 L820 365" fill="none"/>
+      <path d="M860 300 L905 355 L955 410" fill="none"/>
+      <path d="M915 252 L975 210 L1010 300" fill="none"/>
+      <path d="M805 258 L760 190 L860 215" fill="none"/>
+      <path d="M745 330 L710 300 L760 410" fill="none"/>
+      <path d="M905 355 L960 410 L860 450" fill="none"/>
+      <path d="M975 285 L960 410" fill="none"/>
+      <path d="M860 215 L915 252" fill="none"/>
+      <path d="M820 365 L860 450" fill="none"/>
+    </g>
+    <g fill="#7aa5cc">
+      <circle cx="860" cy="300" r="5"/>
+      <circle cx="915" cy="252" r="4"/>
+      <circle cx="975" cy="285" r="4"/>
+      <circle cx="805" cy="258" r="4"/>
+      <circle cx="745" cy="330" r="4"/>
+      <circle cx="820" cy="365" r="4"/>
+      <circle cx="905" cy="355" r="4"/>
+      <circle cx="960" cy="410" r="4"/>
+      <circle cx="975" cy="210" r="4"/>
+      <circle cx="760" cy="190" r="4"/>
+      <circle cx="860" cy="215" r="4"/>
+      <circle cx="760" cy="410" r="4"/>
+      <circle cx="860" cy="450" r="4"/>
+      <circle cx="1010" cy="300" r="4"/>
+      <circle cx="710" cy="300" r="4"/>
+    </g>
+  </g>
+</svg>
